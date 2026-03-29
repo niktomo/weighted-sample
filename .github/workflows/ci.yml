@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # PHPUnit 12.5+ requires PHP 8.3+
+          - php: '8.2'
+            phpunit: '^11.5'
+          - php: '8.3'
+            phpunit: '^12.0'
+          - php: '8.4'
+            phpunit: '^12.0'
+
+    name: PHP ${{ matrix.php }}
+
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+
+      - name: Install dependencies
+        run: |
+          composer require --dev "phpunit/phpunit:${{ matrix.phpunit }}" \
+            --no-interaction --no-update
+          composer update --prefer-dist --no-interaction
+
+      - name: Run Pint
+        run: vendor/bin/pint --test
+        if: matrix.php == '8.4'
+
+      - name: Run PHPStan
+        run: vendor/bin/phpstan analyse --memory-limit=512M
+        if: matrix.php == '8.4'
+
+      - name: Run PHPUnit
+        run: vendor/bin/phpunit --no-coverage

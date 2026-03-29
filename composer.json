@@ -1,0 +1,39 @@
+{
+    "name": "niktomo/weighted-sample",
+    "description": "Weighted random sampling with box-gacha and destructive draw modes",
+    "keywords": ["weighted", "random", "sample", "gacha", "lottery"],
+    "homepage": "https://github.com/niktomo/weighted-sample",
+    "authors": [
+        {
+            "name": "niktomo",
+            "role": "Developer"
+        }
+    ],
+    "type": "library",
+    "license": "MIT",
+    "require": {
+        "php": "^8.2"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^12.0",
+        "phpstan/phpstan": "^2.0",
+        "laravel/pint": "^1.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "WeightedSample\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "WeightedSample\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "vendor/bin/phpunit --no-coverage",
+        "stan": "vendor/bin/phpstan analyse --memory-limit=512M",
+        "pint": "vendor/bin/pint"
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
