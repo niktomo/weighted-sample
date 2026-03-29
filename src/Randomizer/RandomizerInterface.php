@@ -8,6 +8,8 @@ interface RandomizerInterface
 {
     /**
      * Returns a random integer in [0, max).
+     *
+     * @return int a value in [0, max)
      */
     public function next(int $max): int;
 }

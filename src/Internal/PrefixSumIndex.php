@@ -28,7 +28,7 @@ final class PrefixSumIndex
 
         foreach ($weights as $w) {
             if ($w <= 0) {
-                throw new \InvalidArgumentException("Each weight must be a positive integer, got {$w}.");
+                throw new \InvalidArgumentException("Each weight must be a positive integer, {$w} given.");
             }
             $acc   += $w;
             $sums[] = $acc;
