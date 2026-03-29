@@ -1,5 +1,7 @@
 # weighted-sample
 
+[English README](README.md)
+
 PHP 8.2+ 向け重み付きランダムサンプリングライブラリ。
 繰り返し抽選・破壊的抽選・ボックスガチャの3つのプール型をサポートします。
 
@@ -196,9 +198,35 @@ $result = $pool->draw();
 
 すべての抽選は **prefix sum + binary search**（O(log n)）で整数演算のみを用いて実現しています。浮動小数点の丸め誤差はありません。
 
-| アイテム | 期待される分布 |
-|---|---|
-| `[SSR=1, SR=9, R=90]` | 1% / 9% / 90% |
+### ベンチマーク結果
+
+**WeightedPool — 100万回抽選（SSR=1%, SR=9%, R=90%）**
+
+```
+Item        Draws    Actual%  Expected%     Diff
+SSR         10050     1.005%     1.000%   +0.005%
+SR          90058     9.006%     9.000%   +0.006%
+R          899892    89.989%    90.000%   -0.011%
+```
+
+**WeightedPool — 100アイテム（weight 1〜100）、100万回抽選**
+
+```
+Item        Draws    Actual%  Expected%     Diff
+w1            207     0.021%     0.020%   +0.001%
+w2            425     0.042%     0.040%   +0.003%
+...
+w100        19973     1.997%     1.980%   +0.017%
+最大偏差: 0.0338%
+```
+
+ベンチマークを自分で実行する場合：
+
+```bash
+docker compose run --rm benchmark
+# Docker なしの場合:
+php benchmark/run.php
+```
 
 ---
 
