@@ -1,6 +1,6 @@
 # weighted-sample
 
-[日本語版 README はこちら](README.ja.md)
+[日本語版 README はこちら](README-ja.md)
 
 Weighted random sampling for PHP 8.2+.
 Three pool types cover the most common use cases: repeatable draws, destructive draws, and box-gacha style limited inventory.
