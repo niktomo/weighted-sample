@@ -65,10 +65,10 @@ final class WeightedPool implements PoolInterface
      */
     public function draw(): mixed
     {
-        $rand = $this->randomizer->next($this->index->total());
-        $idx  = $this->index->pick($rand);
+        $randomValue   = $this->randomizer->next($this->index->total());
+        $selectedIndex = $this->index->pick($randomValue);
 
-        return $this->items[$idx];
+        return $this->items[$selectedIndex];
     }
 
     /**

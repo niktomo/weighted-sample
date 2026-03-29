@@ -77,6 +77,17 @@ class SeededRandomizerTest extends TestCase
         }
     }
 
+    public function test_next_with_max_one_always_returns_zero(): void
+    {
+        // Arrange
+        $randomizer = new SeededRandomizer(1);
+
+        // Act & Assert — [0, 1) の範囲は 0 のみ
+        $this->assertSame(0, $randomizer->next(1), 'next(1) は常に 0 を返すこと');
+        $this->assertSame(0, $randomizer->next(1), 'next(1) の2回目も 0 を返すこと');
+        $this->assertSame(0, $randomizer->next(1), 'next(1) の3回目も 0 を返すこと');
+    }
+
     public function test_instances_are_independent(): void
     {
         // Arrange

@@ -95,19 +95,19 @@ final class BoxPool implements ExhaustiblePoolInterface
             throw new EmptyPoolException('The pool is empty.');
         }
 
-        $rand     = $this->randomizer->next($this->index->total());
-        $idx      = $this->index->pick($rand);
-        $item     = $this->items[$idx];
-        $newCount = $this->counts[$idx] - 1;
+        $randomValue   = $this->randomizer->next($this->index->total());
+        $selectedIndex = $this->index->pick($randomValue);
+        $item          = $this->items[$selectedIndex];
+        $newCount      = $this->counts[$selectedIndex] - 1;
 
         if ($newCount === 0) {
-            array_splice($this->items, $idx, 1);
-            array_splice($this->weights, $idx, 1);
-            array_splice($this->counts, $idx, 1);
+            array_splice($this->items, $selectedIndex, 1);
+            array_splice($this->weights, $selectedIndex, 1);
+            array_splice($this->counts, $selectedIndex, 1);
         } else {
-            $counts       = $this->counts;
-            $counts[$idx] = $newCount;
-            $this->counts = array_values($counts);
+            $counts                = $this->counts;
+            $counts[$selectedIndex] = $newCount;
+            $this->counts          = array_values($counts);
         }
 
         $this->index = $this->items !== [] ? new PrefixSumIndex($this->weights) : null;

@@ -1,7 +1,7 @@
 {
     "name": "niktomo/weighted-sample",
     "description": "Weighted random sampling with box-gacha and destructive draw modes",
-    "keywords": ["weighted", "random", "sample", "gacha", "lottery"],
+    "keywords": ["weighted", "random", "sample", "gacha", "lottery", "probability", "selection", "algorithm"],
     "homepage": "https://github.com/niktomo/weighted-sample",
     "authors": [
         {

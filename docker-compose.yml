@@ -1,0 +1,7 @@
+services:
+  benchmark:
+    image: php:8.4-cli
+    volumes:
+      - .:/app
+    working_dir: /app
+    command: php benchmark/run.php

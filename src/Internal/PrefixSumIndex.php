@@ -23,41 +23,41 @@ final class PrefixSumIndex
             throw new \InvalidArgumentException('weights must not be empty.');
         }
 
-        $acc  = 0;
-        $sums = [];
+        $runningTotal = 0;
+        $sums         = [];
 
-        foreach ($weights as $w) {
-            if ($w <= 0) {
-                throw new \InvalidArgumentException("Each weight must be a positive integer, {$w} given.");
+        foreach ($weights as $weight) {
+            if ($weight <= 0) {
+                throw new \InvalidArgumentException("Each weight must be a positive integer, {$weight} given.");
             }
-            $acc   += $w;
-            $sums[] = $acc;
+            $runningTotal += $weight;
+            $sums[]        = $runningTotal;
         }
 
         $this->prefixSums = $sums;
-        $this->total      = $acc;
+        $this->total      = $runningTotal;
     }
 
     /**
      * Returns the index of the selected item.
      *
-     * @param int $rand a value in [0, total)
+     * @param int $randomValue a value in [0, total)
      */
-    public function pick(int $rand): int
+    public function pick(int $randomValue): int
     {
-        $lo = 0;
-        $hi = count($this->prefixSums) - 1;
+        $low  = 0;
+        $high = count($this->prefixSums) - 1;
 
-        while ($lo < $hi) {
-            $mid = ($lo + $hi) >> 1;
-            if ($this->prefixSums[$mid] <= $rand) {
-                $lo = $mid + 1;
+        while ($low < $high) {
+            $middle = ($low + $high) >> 1;
+            if ($this->prefixSums[$middle] <= $randomValue) {
+                $low = $middle + 1;
             } else {
-                $hi = $mid;
+                $high = $middle;
             }
         }
 
-        return $lo;
+        return $low;
     }
 
     public function total(): int

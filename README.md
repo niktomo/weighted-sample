@@ -173,11 +173,35 @@ The default (no seed) uses `\Random\Engine\Secure` for cryptographically safe ra
 
 All selection is performed using **prefix sum + binary search** (O(log n)) with integer arithmetic only — no floating-point rounding.
 
-| Items | Expected distribution | Verified |
-|---|---|---|
-| `[SSR=1, SR=9, R=90]` | 1% / 9% / 90% | Docker benchmark (see `benchmark/`) |
+### Benchmark results
 
-> Benchmark results to be added after running `docker compose up benchmark`.
+**WeightedPool — 1,000,000 draws (SSR=1%, SR=9%, R=90%)**
+
+```
+Item        Draws    Actual%  Expected%     Diff
+SSR         10050     1.005%     1.000%   +0.005%
+SR          90058     9.006%     9.000%   +0.006%
+R          899892    89.989%    90.000%   -0.011%
+```
+
+**WeightedPool — 100 items (weight 1–100), 1,000,000 draws**
+
+```
+Item        Draws    Actual%  Expected%     Diff
+w1            199     0.020%     0.020%   +0.000%
+w2            377     0.038%     0.040%   -0.002%
+...
+w100        20049     2.005%     1.980%   +0.025%
+Max deviation: 0.0264%
+```
+
+Run the full benchmark:
+
+```bash
+docker compose run --rm benchmark
+# or without Docker:
+php benchmark/run.php
+```
 
 ---
 
