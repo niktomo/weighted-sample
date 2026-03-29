@@ -22,12 +22,12 @@ final class WeightedPool implements PoolInterface
     private PrefixSumIndex $index;
 
     /**
-     * @param list<T>               $items
-     * @param \Closure(T): int      $weightFn
+     * @param list<T>          $items
+     * @param \Closure(T): int $weightFn
      */
     private function __construct(
         private readonly array $items,
-        private readonly \Closure $weightFn,
+        \Closure $weightFn,
         private readonly RandomizerInterface $randomizer,
     ) {
         $this->index = new PrefixSumIndex(array_map($weightFn, $items));
@@ -71,13 +71,4 @@ final class WeightedPool implements PoolInterface
         return $this->items[$selectedIndex];
     }
 
-    /**
-     * Returns a new instance with the given randomizer.
-     *
-     * @return self<T>
-     */
-    public function withRandomizer(RandomizerInterface $randomizer): self
-    {
-        return new self($this->items, $this->weightFn, $randomizer);
-    }
 }

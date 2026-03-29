@@ -170,39 +170,6 @@ class WeightedPoolTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // withRandomizer()
-    // -------------------------------------------------------------------------
-
-    public function test_with_randomizer_returns_new_instance(): void
-    {
-        // Arrange
-        $pool    = WeightedPool::of([['name' => 'A', 'weight' => 1]], fn ($i) => $i['weight']);
-        $newPool = $pool->withRandomizer($this->fixedRandomizer(0));
-
-        // Assert
-        $this->assertNotSame($pool, $newPool, 'withRandomizer() は新しいインスタンスを返すこと');
-    }
-
-    public function test_with_randomizer_new_instance_uses_new_randomizer(): void
-    {
-        // Arrange — [A weight=10, B weight=90] で rand=0 → A、rand=99 → B
-        $items = [
-            ['name' => 'A', 'weight' => 10],
-            ['name' => 'B', 'weight' => 90],
-        ];
-        $pool    = WeightedPool::of($items, fn ($i) => $i['weight'], randomizer: $this->fixedRandomizer(0));
-        $newPool = $pool->withRandomizer($this->fixedRandomizer(99));
-
-        // Act
-        $fromOriginal = $pool->draw()['name'];
-        $fromNew      = $newPool->draw()['name'];
-
-        // Assert
-        $this->assertSame('A', $fromOriginal, '元のプールは rand=0 なので A を返すこと');
-        $this->assertSame('B', $fromNew, 'withRandomizer() 後のプールは rand=99 なので B を返すこと');
-    }
-
-    // -------------------------------------------------------------------------
     // ヘルパー
     // -------------------------------------------------------------------------
 
