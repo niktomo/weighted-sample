@@ -1,12 +1,12 @@
 # Contributing
 
-## 開発環境
+## Setup
 
 ```bash
 composer install
 ```
 
-## コマンド
+## Commands
 
 ```bash
 composer test   # PHPUnit
@@ -14,66 +14,66 @@ composer stan   # PHPStan (level 8)
 composer pint   # Pint (PSR-12 preset)
 ```
 
-## コーディング規約
+## Coding Standards
 
-- `declare(strict_types=1)` を全ファイルに付与
-- **PHPStan level 8** — `@phpstan-ignore` による抑制禁止。根本原因を修正する
-- **Pint** — PSR-12 preset（`pint.json`）
-- 変数名は略さない（`$idx` → `$selectedIndex` 等）
+- All files must have `declare(strict_types=1)`
+- **PHPStan level 8** — suppressing errors via `@phpstan-ignore` is not allowed; fix the root cause
+- **Pint** — PSR-12 preset (`pint.json`)
+- Do not abbreviate variable names (`$idx` → `$selectedIndex`, etc.)
 
-## テスト規約
+## Testing
 
-- **TDD 必須** — 実装より先にテストを書く（Red → Green → Refactor）
-- **Unit Tests**: AAA 形式（`// Arrange`, `// Act`, `// Assert`）
-- **Feature Tests**: BDD/Gherkin 形式（`// Given`, `// When`, `// Then`）
-- **組み合わせテスト**: `#[DataProvider]` を使用
-- 全アサーションに「何を検証し、何が期待結果か」のメッセージを付与
-- テストメソッド名は `test_snake_case_describing_behavior` 形式
+- **TDD required** — write tests before implementation (Red → Green → Refactor)
+- **Unit Tests**: AAA format (`// Arrange`, `// Act`, `// Assert`)
+- **Feature Tests**: BDD/Gherkin format (`// Given`, `// When`, `// Then`)
+- **Combinatorial tests**: use `#[DataProvider]`
+- All assertions must include a message describing what is being verified and what the expected result is
+- Test method names must follow the `test_snake_case_describing_behavior` convention
 
 ---
 
-## ブランチ戦略
+## Branch Strategy
 
-| ブランチ | 用途 |
+| Branch | Purpose |
 |---|---|
-| `main` | 安定版。直接 push 禁止。PR のみ |
-| `feat/xxx` | 新機能 |
-| `fix/xxx` | バグ修正 |
-| `docs/xxx` | ドキュメントのみの変更 |
-| `refactor/xxx` | 外部仕様を変えないリファクタリング |
+| `main` | Stable. No direct push — PRs only |
+| `feat/xxx` | New features |
+| `fix/xxx` | Bug fixes |
+| `docs/xxx` | Documentation-only changes |
+| `refactor/xxx` | Refactoring without changing external behaviour |
 
 ---
 
-## Issue
+## Issues
 
-### バグ報告
+### Bug Reports
 
-以下を含めてください：
+Please include:
 
-- PHP のバージョン
-- 再現できる最小コード
-- 期待した動作と実際の動作
+- PHP version
+- Minimal reproducible code
+- Expected behaviour vs actual behaviour
 
-### 機能要望
+### Feature Requests
 
-- ユースケースを先に説明する（「〜がしたい」）
-- 実装案がある場合は別途記載
+- Describe the use case first ("I want to be able to…")
+- Include an implementation proposal if you have one
 
 ---
 
-## Pull Request
+## Pull Requests
 
-1. `main` から `feat/xxx` or `fix/xxx` ブランチを作成
-2. 変更を実装し、テストを追加
-3. CI がすべて通ることを確認
-4. PR を作成し、以下を記載：
-   - **何を変えたか**
-   - **なぜ変えたか**
-   - **どのようにテストしたか**
+1. Branch off `main` as `feat/xxx` or `fix/xxx`
+2. Implement the change and add tests
+3. Ensure all CI checks pass
+4. Open a PR and include:
+   - **What** was changed
+   - **Why** it was changed
+   - **How** it was tested
 
-### PR のルール
+### PR Rules
 
-- テストなしの機能追加は受け付けない
-- PHPStan level 8 エラーがある状態でマージしない
-- 1 PR = 1目的
-- `main` への force push 禁止
+- Feature additions without tests will not be accepted
+- PRs with PHPStan level 8 errors will not be merged
+- One PR = one purpose (keep PRs reviewable)
+- Force push to `main` is prohibited
