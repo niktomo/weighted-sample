@@ -10,6 +10,7 @@ use WeightedSample\Filter\StrictValueFilter;
 use WeightedSample\Pool\DestructivePool;
 use WeightedSample\Pool\ExhaustiblePoolInterface;
 use WeightedSample\Randomizer\RandomizerInterface;
+use WeightedSample\Selector\AliasTableSelector;
 
 class DestructivePoolTest extends TestCase
 {
@@ -205,6 +206,30 @@ class DestructivePoolTest extends TestCase
 
         // Act
         $pool->draw();
+    }
+
+    // -------------------------------------------------------------------------
+    // selectorClass — セレクター差し替え
+    // -------------------------------------------------------------------------
+
+    public function test_alias_table_selector_draws_valid_item(): void
+    {
+        // Arrange
+        $items = [
+            ['id' => 1, 'weight' => 10],
+            ['id' => 2, 'weight' => 90],
+        ];
+        $pool = DestructivePool::of(
+            $items,
+            fn ($i) => $i['weight'],
+            selectorClass: AliasTableSelector::class,
+        );
+
+        // Act
+        $result = $pool->draw();
+
+        // Assert
+        $this->assertContains($result['id'], [1, 2], 'AliasTableSelector を使った draw がプール内のアイテムを返すこと');
     }
 
     // -------------------------------------------------------------------------

@@ -7,9 +7,10 @@ namespace WeightedSample\Pool;
 use WeightedSample\Exception\EmptyPoolException;
 use WeightedSample\Filter\ItemFilterInterface;
 use WeightedSample\Filter\PositiveValueFilter;
-use WeightedSample\Internal\PrefixSumIndex;
 use WeightedSample\Randomizer\RandomizerInterface;
 use WeightedSample\Randomizer\SeededRandomizer;
+use WeightedSample\Selector\PrefixSumSelector;
+use WeightedSample\Selector\SelectorInterface;
 
 /**
  * Weighted pool where each item has a finite count.
@@ -29,30 +30,37 @@ final class BoxPool implements ExhaustiblePoolInterface
     /** @var list<int> */
     private array $counts;
 
-    private ?PrefixSumIndex $index;
+    private ?SelectorInterface $selector;
+
+    /** @var class-string<SelectorInterface> */
+    private readonly string $selectorClass;
 
     /**
-     * @param list<T>   $items
-     * @param list<int> $weights
-     * @param list<int> $counts
+     * @param list<T>                        $items
+     * @param list<int>                      $weights
+     * @param list<int>                      $counts
+     * @param class-string<SelectorInterface> $selectorClass
      */
     private function __construct(
         array $items,
         array $weights,
         array $counts,
         private readonly RandomizerInterface $randomizer,
+        string $selectorClass,
     ) {
-        $this->items   = $items;
-        $this->weights = $weights;
-        $this->counts  = $counts;
-        $this->index   = $items !== [] ? new PrefixSumIndex($weights) : null;
+        $this->items         = $items;
+        $this->weights       = $weights;
+        $this->counts        = $counts;
+        $this->selectorClass = $selectorClass;
+        $this->selector      = $items !== [] ? $selectorClass::build($weights) : null;
     }
 
     /**
      * @template TItem
-     * @param list<TItem>          $items
-     * @param \Closure(TItem): int $weightFn
-     * @param \Closure(TItem): int $countFn
+     * @param list<TItem>                    $items
+     * @param \Closure(TItem): int           $weightFn
+     * @param \Closure(TItem): int           $countFn
+     * @param class-string<SelectorInterface> $selectorClass
      * @return self<TItem>
      */
     public static function of(
@@ -61,6 +69,7 @@ final class BoxPool implements ExhaustiblePoolInterface
         \Closure $countFn,
         ?ItemFilterInterface $filter = null,
         ?RandomizerInterface $randomizer = null,
+        string $selectorClass = PrefixSumSelector::class,
     ): self {
         $filter ??= new PositiveValueFilter();
 
@@ -79,6 +88,7 @@ final class BoxPool implements ExhaustiblePoolInterface
             array_map($weightFn, $filtered),
             array_map($countFn, $filtered),
             $randomizer ?? new SeededRandomizer(),
+            $selectorClass,
         );
     }
 
@@ -91,12 +101,11 @@ final class BoxPool implements ExhaustiblePoolInterface
      */
     public function draw(): mixed
     {
-        if ($this->index === null) {
+        if ($this->selector === null) {
             throw new EmptyPoolException('The pool is empty.');
         }
 
-        $randomValue   = $this->randomizer->next($this->index->total());
-        $selectedIndex = $this->index->pick($randomValue);
+        $selectedIndex = $this->selector->pick($this->randomizer);
         $item          = $this->items[$selectedIndex];
         $newCount      = $this->counts[$selectedIndex] - 1;
 
@@ -105,12 +114,12 @@ final class BoxPool implements ExhaustiblePoolInterface
             array_splice($this->weights, $selectedIndex, 1);
             array_splice($this->counts, $selectedIndex, 1);
         } else {
-            $counts                = $this->counts;
+            $counts                 = $this->counts;
             $counts[$selectedIndex] = $newCount;
-            $this->counts          = array_values($counts);
+            $this->counts           = array_values($counts);
         }
 
-        $this->index = $this->items !== [] ? new PrefixSumIndex($this->weights) : null;
+        $this->selector = $this->items !== [] ? ($this->selectorClass)::build($this->weights) : null;
 
         return $item;
     }

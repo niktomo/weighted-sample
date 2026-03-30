@@ -10,6 +10,7 @@ use WeightedSample\Filter\StrictValueFilter;
 use WeightedSample\Pool\PoolInterface;
 use WeightedSample\Pool\WeightedPool;
 use WeightedSample\Randomizer\RandomizerInterface;
+use WeightedSample\Selector\AliasTableSelector;
 
 class WeightedPoolTest extends TestCase
 {
@@ -167,6 +168,30 @@ class WeightedPoolTest extends TestCase
 
         // Assert
         $this->assertSame('A', $result->name, 'オブジェクトアイテムでも rand=0 で最初のアイテムが返ること');
+    }
+
+    // -------------------------------------------------------------------------
+    // selectorClass — セレクター差し替え
+    // -------------------------------------------------------------------------
+
+    public function test_alias_table_selector_draws_valid_item(): void
+    {
+        // Arrange
+        $items = [
+            ['name' => 'A', 'weight' => 10],
+            ['name' => 'B', 'weight' => 90],
+        ];
+        $pool = WeightedPool::of(
+            $items,
+            fn ($i) => $i['weight'],
+            selectorClass: AliasTableSelector::class,
+        );
+
+        // Act
+        $result = $pool->draw();
+
+        // Assert
+        $this->assertContains($result['name'], ['A', 'B'], 'AliasTableSelector を使った draw がプール内のアイテムを返すこと');
     }
 
     // -------------------------------------------------------------------------

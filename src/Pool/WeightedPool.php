@@ -7,9 +7,10 @@ namespace WeightedSample\Pool;
 use WeightedSample\Exception\EmptyPoolException;
 use WeightedSample\Filter\ItemFilterInterface;
 use WeightedSample\Filter\PositiveValueFilter;
-use WeightedSample\Internal\PrefixSumIndex;
 use WeightedSample\Randomizer\RandomizerInterface;
 use WeightedSample\Randomizer\SeededRandomizer;
+use WeightedSample\Selector\PrefixSumSelector;
+use WeightedSample\Selector\SelectorInterface;
 
 /**
  * Immutable weighted pool. draw() always selects from the full item set.
@@ -19,24 +20,21 @@ use WeightedSample\Randomizer\SeededRandomizer;
  */
 final class WeightedPool implements PoolInterface
 {
-    private PrefixSumIndex $index;
-
     /**
-     * @param list<T>          $items
-     * @param \Closure(T): int $weightFn
+     * @param list<T> $items
      */
     private function __construct(
         private readonly array $items,
-        \Closure $weightFn,
+        private readonly SelectorInterface $selector,
         private readonly RandomizerInterface $randomizer,
     ) {
-        $this->index = new PrefixSumIndex(array_map($weightFn, $items));
     }
 
     /**
      * @template TItem
-     * @param list<TItem>          $items
-     * @param \Closure(TItem): int $weightFn
+     * @param list<TItem>                    $items
+     * @param \Closure(TItem): int           $weightFn
+     * @param class-string<SelectorInterface> $selectorClass
      * @return self<TItem>
      */
     public static function of(
@@ -44,6 +42,7 @@ final class WeightedPool implements PoolInterface
         \Closure $weightFn,
         ?ItemFilterInterface $filter = null,
         ?RandomizerInterface $randomizer = null,
+        string $selectorClass = PrefixSumSelector::class,
     ): self {
         $filter ??= new PositiveValueFilter();
 
@@ -57,7 +56,11 @@ final class WeightedPool implements PoolInterface
             throw new EmptyPoolException('Cannot create a WeightedPool: no items remain after filtering.');
         }
 
-        return new self($filtered, $weightFn, $randomizer ?? new SeededRandomizer());
+        return new self(
+            $filtered,
+            $selectorClass::build(array_map($weightFn, $filtered)),
+            $randomizer ?? new SeededRandomizer(),
+        );
     }
 
     /**
@@ -65,10 +68,8 @@ final class WeightedPool implements PoolInterface
      */
     public function draw(): mixed
     {
-        $randomValue   = $this->randomizer->next($this->index->total());
-        $selectedIndex = $this->index->pick($randomValue);
+        $selectedIndex = $this->selector->pick($this->randomizer);
 
         return $this->items[$selectedIndex];
     }
-
 }

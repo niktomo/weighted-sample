@@ -10,6 +10,7 @@ use WeightedSample\Filter\StrictValueFilter;
 use WeightedSample\Pool\BoxPool;
 use WeightedSample\Pool\ExhaustiblePoolInterface;
 use WeightedSample\Randomizer\RandomizerInterface;
+use WeightedSample\Selector\AliasTableSelector;
 
 class BoxPoolTest extends TestCase
 {
@@ -175,6 +176,31 @@ class BoxPoolTest extends TestCase
 
         // Act
         $pool->draw();
+    }
+
+    // -------------------------------------------------------------------------
+    // selectorClass — セレクター差し替え
+    // -------------------------------------------------------------------------
+
+    public function test_alias_table_selector_draws_valid_item(): void
+    {
+        // Arrange
+        $items = [
+            ['id' => 1, 'weight' => 10, 'count' => 2],
+            ['id' => 2, 'weight' => 90, 'count' => 3],
+        ];
+        $pool = BoxPool::of(
+            $items,
+            fn ($i) => $i['weight'],
+            fn ($i) => $i['count'],
+            selectorClass: AliasTableSelector::class,
+        );
+
+        // Act
+        $result = $pool->draw();
+
+        // Assert
+        $this->assertContains($result['id'], [1, 2], 'AliasTableSelector を使った draw がプール内のアイテムを返すこと');
     }
 
     // -------------------------------------------------------------------------
