@@ -38,38 +38,39 @@ class AliasTableSelectorTest extends TestCase
 
     public function test_single_item_always_returns_zero(): void
     {
-        // Arrange — アイテムが1つのとき prob[0]=1.0 なのでコインフリップに関わらず常に 0
+        // Arrange — アイテムが1つのとき threshold[0]=W なので coinValue は常に閾値を下回り 0 を返す
+        // n=1, W=100, n×W=100 → r ∈ [0, 99]: coinValue=r < 100 = threshold[0] → 常に 0
         $selector = AliasTableSelector::build([100]);
 
         // Act & Assert
-        $this->assertSame(0, $selector->pick($this->sequenceRandomizer(0, 0)), 'アイテムが1つのとき pick は常に 0 を返すこと（1回目）');
-        $this->assertSame(0, $selector->pick($this->sequenceRandomizer(0, PHP_INT_MAX - 1)), 'アイテムが1つのとき pick は常に 0 を返すこと（2回目）');
+        $this->assertSame(0, $selector->pick($this->sequenceRandomizer(0)), 'アイテムが1つのとき pick は常に 0 を返すこと（r=0）');
+        $this->assertSame(0, $selector->pick($this->sequenceRandomizer(99)), 'アイテムが1つのとき pick は常に 0 を返すこと（r=99）');
     }
 
     public function test_pick_returns_item_index_when_coin_is_below_threshold(): void
     {
-        // Arrange — weights=[10, 90]: prob[0]=0.2, alias[0]=1
-        // column=0, coin_int=0 → coin_float≈0 < 0.2 → index 0
+        // Arrange — weights=[10, 90]: n=2, W=100, n×W=200, threshold=[20, 100], alias=[1, 0]
+        // r=0 → column=intdiv(0,100)=0, coinValue=0%100=0. 0 < 20 → index 0
         $selector = AliasTableSelector::build([10, 90]);
 
         // Act
-        $result = $selector->pick($this->sequenceRandomizer(0, 0));
+        $result = $selector->pick($this->sequenceRandomizer(0));
 
         // Assert
-        $this->assertSame(0, $result, 'column=0 でコインがしきい値を下回るとき index 0 が返ること');
+        $this->assertSame(0, $result, 'column=0 で coinValue がしきい値を下回るとき index 0 が返ること');
     }
 
     public function test_pick_returns_alias_index_when_coin_exceeds_threshold(): void
     {
-        // Arrange — weights=[10, 90]: prob[0]=0.2, alias[0]=1
-        // column=0, coin_int=PHP_INT_MAX-1 → coin_float≈1.0 >= 0.2 → alias[0]=1
+        // Arrange — weights=[10, 90]: n=2, W=100, n×W=200, threshold=[20, 100], alias=[1, 0]
+        // r=20 → column=intdiv(20,100)=0, coinValue=20%100=20. 20 < 20? No → alias[0]=1
         $selector = AliasTableSelector::build([10, 90]);
 
         // Act
-        $result = $selector->pick($this->sequenceRandomizer(0, PHP_INT_MAX - 1));
+        $result = $selector->pick($this->sequenceRandomizer(20));
 
         // Assert
-        $this->assertSame(1, $result, 'column=0 でコインがしきい値を超えるとき alias index 1 が返ること');
+        $this->assertSame(1, $result, 'column=0 で coinValue がしきい値以上のとき alias index 1 が返ること');
     }
 
     /**

@@ -23,7 +23,7 @@ class DestructivePoolTest extends TestCase
         // Arrange & Act
         $pool = DestructivePool::of(
             [['id' => 1, 'weight' => 10]],
-            fn ($i) => $i['weight'],
+            fn (array $item) => $item['weight'],
         );
 
         // Assert
@@ -37,7 +37,7 @@ class DestructivePoolTest extends TestCase
         $this->expectException(EmptyPoolException::class);
 
         // Act
-        DestructivePool::of([], fn ($i) => $i['weight']);
+        DestructivePool::of([], fn (array $item) => $item['weight']);
     }
 
     public function test_zero_weight_items_are_excluded_by_default(): void
@@ -47,7 +47,7 @@ class DestructivePoolTest extends TestCase
             ['id' => 1, 'weight' => 0],
             ['id' => 2, 'weight' => 10],
         ];
-        $pool = DestructivePool::of($items, fn ($i) => $i['weight'], randomizer: $this->fixedRandomizer(0));
+        $pool = DestructivePool::of($items, fn (array $item) => $item['weight'], randomizer: $this->fixedRandomizer(0));
 
         // Act & Assert — weight=0 の id=1 は除外され id=2 のみ残ること
         $this->assertSame(2, $pool->draw()['id'], 'weight=0 のアイテムが除外され残ったアイテムが返ること');
@@ -65,7 +65,7 @@ class DestructivePoolTest extends TestCase
         $this->expectException(EmptyPoolException::class);
 
         // Act
-        DestructivePool::of($items, fn ($i) => $i['weight']);
+        DestructivePool::of($items, fn (array $item) => $item['weight']);
     }
 
     public function test_strict_filter_throws_on_zero_weight(): void
@@ -77,7 +77,28 @@ class DestructivePoolTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
 
         // Act
-        DestructivePool::of($items, fn ($i) => $i['weight'], filter: new StrictValueFilter());
+        DestructivePool::of($items, fn (array $item) => $item['weight'], filter: new StrictValueFilter());
+    }
+
+    // -------------------------------------------------------------------------
+    // 元データの不変性
+    // -------------------------------------------------------------------------
+
+    public function test_original_items_array_is_not_mutated_by_draw(): void
+    {
+        // Arrange — 外部から渡す配列のスナップショットを保持
+        $items    = [
+            ['id' => 1, 'weight' => 10],
+            ['id' => 2, 'weight' => 90],
+        ];
+        $snapshot = $items;
+        $pool     = DestructivePool::of($items, fn (array $item) => $item['weight']);
+
+        // Act — draw してアイテムを除外する
+        $pool->draw();
+
+        // Assert — 外部から渡した配列は変更されないこと
+        $this->assertSame($snapshot, $items, 'DestructivePool::of() に渡した元配列は draw() 後も変更されないこと');
     }
 
     // -------------------------------------------------------------------------
@@ -91,7 +112,7 @@ class DestructivePoolTest extends TestCase
             ['id' => 1, 'weight' => 10],
             ['id' => 2, 'weight' => 90],
         ];
-        $pool = DestructivePool::of($items, fn ($i) => $i['weight']);
+        $pool = DestructivePool::of($items, fn (array $item) => $item['weight']);
 
         // Act
         $item = $pool->draw();
@@ -108,7 +129,7 @@ class DestructivePoolTest extends TestCase
             ['id' => 2, 'weight' => 20],
             ['id' => 3, 'weight' => 70],
         ];
-        $pool = DestructivePool::of($items, fn ($i) => $i['weight'], randomizer: $this->fixedRandomizer(0));
+        $pool = DestructivePool::of($items, fn (array $item) => $item['weight'], randomizer: $this->fixedRandomizer(0));
 
         // Act & Assert — 3回の draw でそれぞれ異なるアイテムが返ること
         $first  = $pool->draw()['id'];
@@ -129,7 +150,7 @@ class DestructivePoolTest extends TestCase
             ['id' => 3, 'weight' => 30],
             ['id' => 4, 'weight' => 40],
         ];
-        $pool = DestructivePool::of($items, fn ($i) => $i['weight']);
+        $pool = DestructivePool::of($items, fn (array $item) => $item['weight']);
 
         // Act — 4アイテムを全て引く
         $drawnIds = [
@@ -152,7 +173,7 @@ class DestructivePoolTest extends TestCase
             ['id' => 2, 'weight' => 20],
             ['id' => 3, 'weight' => 70],
         ];
-        $pool = DestructivePool::of($items, fn ($i) => $i['weight'], randomizer: $this->fixedRandomizer(0));
+        $pool = DestructivePool::of($items, fn (array $item) => $item['weight'], randomizer: $this->fixedRandomizer(0));
 
         // Act — 1つ引いて中断 → 残り2アイテムから draw
         $first  = $pool->draw()['id']; // id=1 が除外される
@@ -172,7 +193,7 @@ class DestructivePoolTest extends TestCase
     public function test_is_not_empty_initially(): void
     {
         // Arrange
-        $pool = DestructivePool::of([['id' => 1, 'weight' => 1]], fn ($i) => $i['weight']);
+        $pool = DestructivePool::of([['id' => 1, 'weight' => 1]], fn (array $item) => $item['weight']);
 
         // Assert
         $this->assertFalse($pool->isEmpty(), '構築直後は isEmpty() が false であること');
@@ -185,7 +206,7 @@ class DestructivePoolTest extends TestCase
             ['id' => 1, 'weight' => 10],
             ['id' => 2, 'weight' => 90],
         ];
-        $pool = DestructivePool::of($items, fn ($i) => $i['weight']);
+        $pool = DestructivePool::of($items, fn (array $item) => $item['weight']);
 
         // Act
         $pool->draw();
@@ -198,7 +219,7 @@ class DestructivePoolTest extends TestCase
     public function test_draw_throws_on_empty_pool(): void
     {
         // Arrange
-        $pool = DestructivePool::of([['id' => 1, 'weight' => 1]], fn ($i) => $i['weight']);
+        $pool = DestructivePool::of([['id' => 1, 'weight' => 1]], fn (array $item) => $item['weight']);
         $pool->draw();
 
         // Assert
@@ -221,7 +242,7 @@ class DestructivePoolTest extends TestCase
         ];
         $pool = DestructivePool::of(
             $items,
-            fn ($i) => $i['weight'],
+            fn (array $item) => $item['weight'],
             selectorClass: AliasTableSelector::class,
         );
 
@@ -230,6 +251,28 @@ class DestructivePoolTest extends TestCase
 
         // Assert
         $this->assertContains($result['id'], [1, 2], 'AliasTableSelector を使った draw がプール内のアイテムを返すこと');
+    }
+
+    // -------------------------------------------------------------------------
+    // -------------------------------------------------------------------------
+    // iterable サポート
+    // -------------------------------------------------------------------------
+
+    public function test_of_accepts_generator_as_items(): void
+    {
+        // Arrange — ジェネレータでアイテムをストリーミング供給する
+        $generator = (function () {
+            yield ['id' => 1, 'weight' => 10];
+            yield ['id' => 2, 'weight' => 90];
+        })();
+
+        // Act
+        $pool = DestructivePool::of($generator, fn (array $item) => $item['weight']);
+
+        // Assert — ジェネレータ入力でも正常にプールが構築されること
+        $this->assertInstanceOf(DestructivePool::class, $pool, 'Generator を渡してもプールが生成されること');
+        $result = $pool->draw();
+        $this->assertContains($result['id'], [1, 2], 'draw() がプール内のアイテムを返すこと');
     }
 
     // -------------------------------------------------------------------------

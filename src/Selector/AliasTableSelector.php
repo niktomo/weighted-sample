@@ -10,24 +10,37 @@ use WeightedSample\Randomizer\RandomizerInterface;
  * Walker's Alias Method selector.
  *
  * Build: O(n) — constructs alias table from integer weights.
- * Pick:  O(1) — two random calls (column index + coin flip).
+ * Pick:  O(1) — single random call, pure integer arithmetic.
  *
- * Note: weights must be positive integers (same as PrefixSumSelector).
- * Internally, weights are normalized to float probabilities for the alias table.
- * The coin flip uses integer arithmetic: next(PHP_INT_MAX) / PHP_INT_MAX ≈ [0, 1).
+ *   r = next(n × W)
+ *   column    = r / W   — bucket index [0, n)
+ *   coinValue = r % W   — coin flip value [0, W)
+ *   return coinValue < threshold[column] ? column : alias[column]
+ *
+ * Constraint: n × W must not exceed PHP_INT_MAX (≈ 9.2 × 10^18).
+ *   Example: 10,000 items with total weight 1,000,000 → n×W = 10^10 (safe).
+ *
+ * Note on floating-point during build:
+ *   Vose's algorithm internally uses float to redistribute scaled probabilities.
+ *   The final threshold[i] = round(probability[i] × W) converts back to int.
+ *   Due to 53-bit float precision, threshold[i] may be off by ±1 in pathological
+ *   cases (e.g. weights spanning many orders of magnitude), introducing a bias of
+ *   at most 1/W. For typical integer weights this is negligible.
  *
  * Use this selector when draw() is called frequently on large item sets.
  * For small sets or infrequent draws, PrefixSumSelector (integer-only) is sufficient.
  */
-final class AliasTableSelector implements SelectorInterface
+final readonly class AliasTableSelector implements SelectorInterface
 {
-    /** @var list<float> */
-    private array $probability;
+    /** @var list<int> */
+    private array $threshold;
 
     /** @var list<int> */
     private array $alias;
 
     private int $count;
+
+    private int $total;
 
     /**
      * @param list<int> $weights
@@ -37,6 +50,13 @@ final class AliasTableSelector implements SelectorInterface
         $itemCount = count($weights);
         $this->count = $itemCount;
         $total = array_sum($weights);
+        $this->total = $total;
+
+        if ($total > 0 && $itemCount > intdiv(\PHP_INT_MAX, $total)) {
+            throw new \OverflowException(
+                "n × W ({$itemCount} × {$total}) would exceed PHP_INT_MAX. Reduce item count or total weight.",
+            );
+        }
 
         // Scale probabilities: scaled[i] = n * w[i] / W ∈ [0, n]
         $scaled = array_map(fn (int $w) => $itemCount * $w / $total, $weights);
@@ -73,8 +93,11 @@ final class AliasTableSelector implements SelectorInterface
             }
         }
 
-        /** @var list<float> $probability */
-        $this->probability = $probability;
+        // float probability を整数閾値に変換: threshold[i] = round(probability[i] * W)
+        // coin_value (= r % W ∈ [0, W)) と比較するための分子
+        /** @var list<int> $threshold */
+        $threshold = array_map(fn (float $probability) => (int) round($probability * $total), $probability);
+        $this->threshold = $threshold;
         /** @var list<int> $alias */
         $this->alias = $alias;
     }
@@ -89,9 +112,10 @@ final class AliasTableSelector implements SelectorInterface
 
     public function pick(RandomizerInterface $randomizer): int
     {
-        $column   = $randomizer->next($this->count);
-        $coinFlip = $randomizer->next(PHP_INT_MAX) / PHP_INT_MAX;
+        $random    = $randomizer->next($this->count * $this->total);
+        $column    = intdiv($random, $this->total);
+        $coinValue = $random % $this->total;
 
-        return $coinFlip < $this->probability[$column] ? $column : $this->alias[$column];
+        return $coinValue < $this->threshold[$column] ? $column : $this->alias[$column];
     }
 }

@@ -15,7 +15,7 @@ class WeightedPoolDrawTest extends TestCase
         // Given: アイテムが1つだけの WeightedPool
         $pool = WeightedPool::of(
             [['name' => 'only', 'weight' => 100]],
-            fn ($i) => $i['weight'],
+            fn (array $item) => $item['weight'],
         );
 
         // When: 複数回 draw() する
@@ -34,7 +34,7 @@ class WeightedPoolDrawTest extends TestCase
         ];
         $pool = WeightedPool::of(
             $items,
-            fn ($i) => $i['weight'],
+            fn (array $item) => $item['weight'],
             randomizer: new SeededRandomizer(42),
         );
 
@@ -42,7 +42,7 @@ class WeightedPoolDrawTest extends TestCase
         $results = [$pool->draw()['name'], $pool->draw()['name'], $pool->draw()['name']];
 
         // Then: 同じ seed なら常に同じ列になること
-        $pool2 = WeightedPool::of($items, fn ($i) => $i['weight'], randomizer: new SeededRandomizer(42));
+        $pool2 = WeightedPool::of($items, fn (array $item) => $item['weight'], randomizer: new SeededRandomizer(42));
         $this->assertSame(
             $results,
             [$pool2->draw()['name'], $pool2->draw()['name'], $pool2->draw()['name']],
@@ -57,7 +57,7 @@ class WeightedPoolDrawTest extends TestCase
             ['name' => 'A', 'weight' => 1],
             ['name' => 'B', 'weight' => 1],
         ];
-        $pool = WeightedPool::of($items, fn ($i) => $i['weight']);
+        $pool = WeightedPool::of($items, fn (array $item) => $item['weight']);
 
         // When: 50回 draw() する
         // Then: 例外が発生せずプールが枯渇しないこと

@@ -5,13 +5,16 @@ declare(strict_types=1);
 namespace WeightedSample\Filter;
 
 /**
- * Composes multiple filters. Returns false on first rejection (short-circuit).
+ * Composes multiple filters with AND logic (all filters must accept).
+ *
+ * Evaluation is short-circuit: the first filter that returns false stops
+ * further evaluation and the item is rejected immediately.
  * Exceptions from inner filters are propagated as-is.
  */
-final class CompositeFilter implements ItemFilterInterface
+final readonly class CompositeFilter implements ItemFilterInterface
 {
     /** @param list<ItemFilterInterface> $filters */
-    public function __construct(private readonly array $filters)
+    public function __construct(private array $filters)
     {
     }
 

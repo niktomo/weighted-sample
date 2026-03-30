@@ -9,7 +9,7 @@ namespace WeightedSample\Internal;
  *
  * @internal
  */
-final class PrefixSumIndex
+final readonly class PrefixSumIndex
 {
     /** @var list<int> */
     private array $prefixSums;

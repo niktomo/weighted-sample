@@ -20,7 +20,7 @@ class DestructivePoolDrawTest extends TestCase
             ['id' => 3, 'weight' => 20],
             ['id' => 4, 'weight' => 65],
         ];
-        $pool = DestructivePool::of($items, fn ($i) => $i['weight']);
+        $pool = DestructivePool::of($items, fn (array $item) => $item['weight']);
 
         // When: 全4アイテムを引く
         $drawnIds = [
@@ -40,7 +40,7 @@ class DestructivePoolDrawTest extends TestCase
         // Given: 1アイテムの DestructivePool
         $pool = DestructivePool::of(
             [['id' => 1, 'weight' => 100]],
-            fn ($i) => $i['weight'],
+            fn (array $item) => $item['weight'],
         );
 
         // When: 唯一のアイテムを引く
@@ -56,7 +56,7 @@ class DestructivePoolDrawTest extends TestCase
         // Given: 1アイテムのみの DestructivePool（重みに関係なく必ずそのアイテム）
         $pool = DestructivePool::of(
             [['id' => 99, 'weight' => 1]],
-            fn ($i) => $i['weight'],
+            fn (array $item) => $item['weight'],
         );
 
         // When & Then: draw() は必ず id=99 を返すこと
@@ -76,7 +76,7 @@ class DestructivePoolDrawTest extends TestCase
 
         // When: 2つの同一 seed プールから全4アイテムを引く
         $draw = function (int $seed) use ($items): array {
-            $pool = DestructivePool::of($items, fn ($i) => $i['weight'], randomizer: new SeededRandomizer($seed));
+            $pool = DestructivePool::of($items, fn (array $item) => $item['weight'], randomizer: new SeededRandomizer($seed));
 
             return [
                 $pool->draw()['id'],

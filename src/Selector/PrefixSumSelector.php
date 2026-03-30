@@ -16,7 +16,7 @@ use WeightedSample\Randomizer\RandomizerInterface;
  * Uses integer arithmetic only — no floating-point operations.
  * This is the default selector and is suitable for most use cases.
  */
-final class PrefixSumSelector implements SelectorInterface
+final readonly class PrefixSumSelector implements SelectorInterface
 {
     private PrefixSumIndex $index;
 

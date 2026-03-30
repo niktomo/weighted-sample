@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-03-31
+
+### Added
+- `AliasTableSelector` — Walker's alias method with O(1) pick using a single integer random call
+  (`r = next(n×W)`, column = `r/W`, coinValue = `r%W`) and overflow guard for `n×W > PHP_INT_MAX`
+- `SelectorInterface` — injectable selector strategy with `build(list<int> $weights): static` and `pick(RandomizerInterface): int`
+- All `of()` methods now accept `iterable<T>` (generator / lazy cursor) in addition to arrays
+
+### Changed
+- `final readonly class` applied to all immutable value objects:
+  `AliasTableSelector`, `PrefixSumSelector`, `PrefixSumIndex`, `SeededRandomizer`, `CompositeFilter`
+- `BoxPool::draw()` now rebuilds the selector only when an item type is fully exhausted (count → 0),
+  reducing rebuilds from O(total-draws) to O(distinct-item-types) — a significant performance improvement
+  for pools with high stock counts
+
 ## [0.1.0] - 2025-03-29
 
 ### Added

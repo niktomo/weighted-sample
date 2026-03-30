@@ -15,6 +15,12 @@ use WeightedSample\Selector\SelectorInterface;
 /**
  * Weighted pool that removes each drawn item.
  *
+ * Performance note:
+ *   Each draw() removes one item and rebuilds the selector in O(n).
+ *   Total cost over all draws is O(n²). For pools with hundreds of items
+ *   this is negligible; for very large pools (n ≫ 1,000) consider whether
+ *   WeightedPool with a pre-filtered list is more appropriate.
+ *
  * @template T
  * @implements ExhaustiblePoolInterface<T>
  */
@@ -50,13 +56,13 @@ final class DestructivePool implements ExhaustiblePoolInterface
 
     /**
      * @template TItem
-     * @param list<TItem>                    $items
+     * @param iterable<TItem>                $items
      * @param \Closure(TItem): int           $weightFn
      * @param class-string<SelectorInterface> $selectorClass
      * @return self<TItem>
      */
     public static function of(
-        array $items,
+        iterable $items,
         \Closure $weightFn,
         ?ItemFilterInterface $filter = null,
         ?RandomizerInterface $randomizer = null,
@@ -65,10 +71,12 @@ final class DestructivePool implements ExhaustiblePoolInterface
         $filter ??= new PositiveValueFilter();
 
         /** @var list<TItem> $filtered */
-        $filtered = array_values(array_filter(
-            $items,
-            fn ($item) => $filter->accepts($item, $weightFn($item), null),
-        ));
+        $filtered = [];
+        foreach ($items as $item) {
+            if ($filter->accepts($item, $weightFn($item), null)) {
+                $filtered[] = $item;
+            }
+        }
 
         if ($filtered === []) {
             throw new EmptyPoolException('Cannot create a DestructivePool: no items remain after filtering.');

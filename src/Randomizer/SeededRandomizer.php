@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace WeightedSample\Randomizer;
 
-final class SeededRandomizer implements RandomizerInterface
+final readonly class SeededRandomizer implements RandomizerInterface
 {
     private \Random\Randomizer $randomizer;
 

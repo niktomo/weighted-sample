@@ -18,27 +18,27 @@ use WeightedSample\Selector\SelectorInterface;
  * @template T
  * @implements PoolInterface<T>
  */
-final class WeightedPool implements PoolInterface
+final readonly class WeightedPool implements PoolInterface
 {
     /**
      * @param list<T> $items
      */
     private function __construct(
-        private readonly array $items,
-        private readonly SelectorInterface $selector,
-        private readonly RandomizerInterface $randomizer,
+        private array $items,
+        private SelectorInterface $selector,
+        private RandomizerInterface $randomizer,
     ) {
     }
 
     /**
      * @template TItem
-     * @param list<TItem>                    $items
+     * @param iterable<TItem>                $items
      * @param \Closure(TItem): int           $weightFn
      * @param class-string<SelectorInterface> $selectorClass
      * @return self<TItem>
      */
     public static function of(
-        array $items,
+        iterable $items,
         \Closure $weightFn,
         ?ItemFilterInterface $filter = null,
         ?RandomizerInterface $randomizer = null,
@@ -47,10 +47,12 @@ final class WeightedPool implements PoolInterface
         $filter ??= new PositiveValueFilter();
 
         /** @var list<TItem> $filtered */
-        $filtered = array_values(array_filter(
-            $items,
-            fn ($item) => $filter->accepts($item, $weightFn($item), null),
-        ));
+        $filtered = [];
+        foreach ($items as $item) {
+            if ($filter->accepts($item, $weightFn($item), null)) {
+                $filtered[] = $item;
+            }
+        }
 
         if ($filtered === []) {
             throw new EmptyPoolException('Cannot create a WeightedPool: no items remain after filtering.');

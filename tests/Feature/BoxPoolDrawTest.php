@@ -19,7 +19,7 @@ class BoxPoolDrawTest extends TestCase
             ['id' => 2, 'weight' => 20, 'count' => 2],
             ['id' => 3, 'weight' => 70, 'count' => 3],
         ];
-        $pool = BoxPool::of($items, fn ($i) => $i['weight'], fn ($i) => $i['count']);
+        $pool = BoxPool::of($items, fn (array $item) => $item['weight'], fn (array $item) => $item['count']);
 
         // When: 6回引く
         $drawn = [
@@ -43,7 +43,7 @@ class BoxPoolDrawTest extends TestCase
             ['id' => 1, 'weight' => 50, 'count' => 1],
             ['id' => 2, 'weight' => 50, 'count' => 2],
         ];
-        $pool = BoxPool::of($items, fn ($i) => $i['weight'], fn ($i) => $i['count'], randomizer: new SeededRandomizer(1));
+        $pool = BoxPool::of($items, fn (array $item) => $item['weight'], fn (array $item) => $item['count'], randomizer: new SeededRandomizer(1));
 
         // When: 3回引く
         $drawn = [
@@ -63,8 +63,8 @@ class BoxPoolDrawTest extends TestCase
         // Given: count 合計 = 2 の BoxPool
         $pool = BoxPool::of(
             [['id' => 1, 'weight' => 100, 'count' => 2]],
-            fn ($i) => $i['weight'],
-            fn ($i) => $i['count'],
+            fn (array $item) => $item['weight'],
+            fn (array $item) => $item['count'],
         );
 
         // When: 2回引いてプールを枯渇させる
@@ -87,7 +87,7 @@ class BoxPoolDrawTest extends TestCase
 
         // When: 同じ seed の2つのプールから全6回引く
         $draw = function (int $seed) use ($items): array {
-            $pool = BoxPool::of($items, fn ($i) => $i['weight'], fn ($i) => $i['count'], randomizer: new SeededRandomizer($seed));
+            $pool = BoxPool::of($items, fn (array $item) => $item['weight'], fn (array $item) => $item['count'], randomizer: new SeededRandomizer($seed));
 
             return [
                 $pool->draw()['id'],
@@ -101,5 +101,77 @@ class BoxPoolDrawTest extends TestCase
 
         // Then: 同じ seed なら常に同じ順序で引かれること
         $this->assertSame($draw(42), $draw(42), '同じ seed では常に同じ抽選順序になること');
+    }
+
+    public function test_weight_distribution_shifts_when_item_exhausted(): void
+    {
+        // Given: Gold(w=50, stock=1) と Bronze(w=50, stock=9) の BoxPool
+        // 初回は Gold:Bronze = 50:50 だが Gold を引き切ると Bronze のみ残る
+        $items = [
+            ['id' => 'Gold',   'weight' => 50, 'stock' => 1],
+            ['id' => 'Bronze', 'weight' => 50, 'stock' => 9],
+        ];
+        $trials    = 10_000;
+        $goldFirst = 0;
+
+        // When: 10,000 試行して初回 draw が Gold である回数を数える
+        for ($trial = 0; $trial < $trials; $trial++) {
+            $pool = BoxPool::of($items, fn (array $item) => $item['weight'], fn (array $item) => $item['stock']);
+            if ($pool->draw()['id'] === 'Gold') {
+                $goldFirst++;
+            }
+        }
+
+        // Then: Gold の初回確率は 50% ± 2% の範囲に収まること
+        $goldRate = $goldFirst / $trials;
+        $this->assertEqualsWithDelta(
+            0.50,
+            $goldRate,
+            0.02,
+            "Gold の初回抽選確率は約50%であること（実測: {$goldRate}）",
+        );
+    }
+
+    public function test_remaining_items_reweighted_correctly_after_stock_exhaustion(): void
+    {
+        // Given: A(w=90, stock=1), B(w=5, stock=5), C(w=5, stock=5)
+        // A が除外されると B:C = 5:5 = 50:50 になるはず
+        $items = [
+            ['id' => 'A', 'weight' => 90, 'stock' => 1],
+            ['id' => 'B', 'weight' => 5,  'stock' => 5],
+            ['id' => 'C', 'weight' => 5,  'stock' => 5],
+        ];
+        $trials  = 10_000;
+        $bCount  = 0;
+        $cCount  = 0;
+
+        // When: A が出るまで引き、A 除外後の次の draw を記録する
+        for ($trial = 0; $trial < $trials; $trial++) {
+            $pool = BoxPool::of($items, fn (array $item) => $item['weight'], fn (array $item) => $item['stock']);
+
+            while (! $pool->isEmpty() && $pool->draw()['id'] !== 'A') {
+                // A が出るまで消費
+            }
+
+            if (! $pool->isEmpty()) {
+                $next = $pool->draw()['id'];
+                if ($next === 'B') {
+                    $bCount++;
+                } elseif ($next === 'C') {
+                    $cCount++;
+                }
+            }
+        }
+
+        // Then: A 除外後の B:C 比率は 50:50 ± 2% であること
+        $total = $bCount + $cCount;
+        $this->assertGreaterThan(0, $total, 'A 除外後に B または C が引かれていること');
+        $bRate = $bCount / $total;
+        $this->assertEqualsWithDelta(
+            0.50,
+            $bRate,
+            0.02,
+            "A 除外後の B 出現率は約50%であること（実測: {$bRate}）",
+        );
     }
 }

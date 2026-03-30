@@ -57,14 +57,14 @@ final class BoxPool implements ExhaustiblePoolInterface
 
     /**
      * @template TItem
-     * @param list<TItem>                    $items
+     * @param iterable<TItem>                $items
      * @param \Closure(TItem): int           $weightFn
      * @param \Closure(TItem): int           $countFn
      * @param class-string<SelectorInterface> $selectorClass
      * @return self<TItem>
      */
     public static function of(
-        array $items,
+        iterable $items,
         \Closure $weightFn,
         \Closure $countFn,
         ?ItemFilterInterface $filter = null,
@@ -74,10 +74,12 @@ final class BoxPool implements ExhaustiblePoolInterface
         $filter ??= new PositiveValueFilter();
 
         /** @var list<TItem> $filtered */
-        $filtered = array_values(array_filter(
-            $items,
-            fn ($item) => $filter->accepts($item, $weightFn($item), $countFn($item)),
-        ));
+        $filtered = [];
+        foreach ($items as $item) {
+            if ($filter->accepts($item, $weightFn($item), $countFn($item))) {
+                $filtered[] = $item;
+            }
+        }
 
         if ($filtered === []) {
             throw new EmptyPoolException('Cannot create a BoxPool: no items remain after filtering.');
@@ -110,16 +112,17 @@ final class BoxPool implements ExhaustiblePoolInterface
         $newCount      = $this->counts[$selectedIndex] - 1;
 
         if ($newCount === 0) {
+            // アイテムが除外されるときのみ weights が変わるので selector を再構築する
             array_splice($this->items, $selectedIndex, 1);
             array_splice($this->weights, $selectedIndex, 1);
             array_splice($this->counts, $selectedIndex, 1);
+            $this->selector = $this->items !== [] ? ($this->selectorClass)::build($this->weights) : null;
         } else {
+            // count が減るだけで weights は変わらないので selector はそのまま使い続ける
             $counts                 = $this->counts;
             $counts[$selectedIndex] = $newCount;
             $this->counts           = array_values($counts);
         }
-
-        $this->selector = $this->items !== [] ? ($this->selectorClass)::build($this->weights) : null;
 
         return $item;
     }

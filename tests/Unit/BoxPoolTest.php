@@ -23,8 +23,8 @@ class BoxPoolTest extends TestCase
         // Arrange & Act
         $pool = BoxPool::of(
             [['id' => 1, 'weight' => 10, 'count' => 3]],
-            fn ($i) => $i['weight'],
-            fn ($i) => $i['count'],
+            fn (array $item) => $item['weight'],
+            fn (array $item) => $item['count'],
         );
 
         // Assert
@@ -38,7 +38,7 @@ class BoxPoolTest extends TestCase
         $this->expectException(EmptyPoolException::class);
 
         // Act
-        BoxPool::of([], fn ($i) => $i['weight'], fn ($i) => $i['count']);
+        BoxPool::of([], fn (array $item) => $item['weight'], fn (array $item) => $item['count']);
     }
 
     public function test_zero_count_items_are_excluded_by_default(): void
@@ -48,7 +48,7 @@ class BoxPoolTest extends TestCase
             ['id' => 1, 'weight' => 10, 'count' => 0],
             ['id' => 2, 'weight' => 90, 'count' => 1],
         ];
-        $pool = BoxPool::of($items, fn ($i) => $i['weight'], fn ($i) => $i['count'], randomizer: $this->fixedRandomizer(0));
+        $pool = BoxPool::of($items, fn (array $item) => $item['weight'], fn (array $item) => $item['count'], randomizer: $this->fixedRandomizer(0));
 
         // Act & Assert — count=0 の id=1 は除外され id=2 のみ残ること
         $this->assertSame(2, $pool->draw()['id'], 'count=0 のアイテムが除外され残ったアイテムが返ること');
@@ -66,7 +66,7 @@ class BoxPoolTest extends TestCase
         $this->expectException(EmptyPoolException::class);
 
         // Act
-        BoxPool::of($items, fn ($i) => $i['weight'], fn ($i) => $i['count']);
+        BoxPool::of($items, fn (array $item) => $item['weight'], fn (array $item) => $item['count']);
     }
 
     public function test_strict_filter_throws_on_zero_count(): void
@@ -78,7 +78,29 @@ class BoxPoolTest extends TestCase
         $this->expectException(\InvalidArgumentException::class);
 
         // Act
-        BoxPool::of($items, fn ($i) => $i['weight'], fn ($i) => $i['count'], filter: new StrictValueFilter());
+        BoxPool::of($items, fn (array $item) => $item['weight'], fn (array $item) => $item['count'], filter: new StrictValueFilter());
+    }
+
+    // -------------------------------------------------------------------------
+    // 元データの不変性
+    // -------------------------------------------------------------------------
+
+    public function test_original_items_array_is_not_mutated_by_draw(): void
+    {
+        // Arrange — 外部から渡す配列のスナップショットを保持
+        $items    = [
+            ['id' => 1, 'weight' => 10, 'count' => 2],
+            ['id' => 2, 'weight' => 90, 'count' => 3],
+        ];
+        $snapshot = $items;
+        $pool     = BoxPool::of($items, fn (array $item) => $item['weight'], fn (array $item) => $item['count']);
+
+        // Act — draw して内部状態（count）を変化させる
+        $pool->draw();
+        $pool->draw();
+
+        // Assert — 外部から渡した配列は変更されないこと
+        $this->assertSame($snapshot, $items, 'BoxPool::of() に渡した元配列は draw() 後も変更されないこと');
     }
 
     // -------------------------------------------------------------------------
@@ -92,7 +114,7 @@ class BoxPoolTest extends TestCase
             ['id' => 1, 'weight' => 10, 'count' => 2],
             ['id' => 2, 'weight' => 90, 'count' => 2],
         ];
-        $pool = BoxPool::of($items, fn ($i) => $i['weight'], fn ($i) => $i['count']);
+        $pool = BoxPool::of($items, fn (array $item) => $item['weight'], fn (array $item) => $item['count']);
 
         // Act
         $item = $pool->draw();
@@ -111,7 +133,7 @@ class BoxPoolTest extends TestCase
             ['id' => 1, 'weight' => 10, 'count' => 1],
             ['id' => 2, 'weight' => 90, 'count' => 3],
         ];
-        $pool = BoxPool::of($items, fn ($i) => $i['weight'], fn ($i) => $i['count'], randomizer: $this->fixedRandomizer(0));
+        $pool = BoxPool::of($items, fn (array $item) => $item['weight'], fn (array $item) => $item['count'], randomizer: $this->fixedRandomizer(0));
 
         // Act
         $first  = $pool->draw()['id'];
@@ -135,8 +157,8 @@ class BoxPoolTest extends TestCase
         // Arrange
         $pool = BoxPool::of(
             [['id' => 1, 'weight' => 10, 'count' => 1]],
-            fn ($i) => $i['weight'],
-            fn ($i) => $i['count'],
+            fn (array $item) => $item['weight'],
+            fn (array $item) => $item['count'],
         );
 
         // Assert
@@ -150,7 +172,7 @@ class BoxPoolTest extends TestCase
             ['id' => 1, 'weight' => 10, 'count' => 2],
             ['id' => 2, 'weight' => 90, 'count' => 1],
         ];
-        $pool = BoxPool::of($items, fn ($i) => $i['weight'], fn ($i) => $i['count'], randomizer: $this->fixedRandomizer(0));
+        $pool = BoxPool::of($items, fn (array $item) => $item['weight'], fn (array $item) => $item['count'], randomizer: $this->fixedRandomizer(0));
 
         // Act — 計3回（count合計）引き切る
         $pool->draw(); // id=1, count=1
@@ -166,8 +188,8 @@ class BoxPoolTest extends TestCase
         // Arrange
         $pool = BoxPool::of(
             [['id' => 1, 'weight' => 10, 'count' => 1]],
-            fn ($i) => $i['weight'],
-            fn ($i) => $i['count'],
+            fn (array $item) => $item['weight'],
+            fn (array $item) => $item['count'],
         );
         $pool->draw();
 
@@ -191,8 +213,8 @@ class BoxPoolTest extends TestCase
         ];
         $pool = BoxPool::of(
             $items,
-            fn ($i) => $i['weight'],
-            fn ($i) => $i['count'],
+            fn (array $item) => $item['weight'],
+            fn (array $item) => $item['count'],
             selectorClass: AliasTableSelector::class,
         );
 
@@ -201,6 +223,28 @@ class BoxPoolTest extends TestCase
 
         // Assert
         $this->assertContains($result['id'], [1, 2], 'AliasTableSelector を使った draw がプール内のアイテムを返すこと');
+    }
+
+    // -------------------------------------------------------------------------
+    // -------------------------------------------------------------------------
+    // iterable サポート
+    // -------------------------------------------------------------------------
+
+    public function test_of_accepts_generator_as_items(): void
+    {
+        // Arrange — ジェネレータでアイテムをストリーミング供給する
+        $generator = (function () {
+            yield ['id' => 1, 'weight' => 10, 'count' => 2];
+            yield ['id' => 2, 'weight' => 90, 'count' => 3];
+        })();
+
+        // Act
+        $pool = BoxPool::of($generator, fn (array $item) => $item['weight'], fn (array $item) => $item['count']);
+
+        // Assert — ジェネレータ入力でも正常にプールが構築されること
+        $this->assertInstanceOf(BoxPool::class, $pool, 'Generator を渡してもプールが生成されること');
+        $result = $pool->draw();
+        $this->assertContains($result['id'], [1, 2], 'draw() がプール内のアイテムを返すこと');
     }
 
     // -------------------------------------------------------------------------
