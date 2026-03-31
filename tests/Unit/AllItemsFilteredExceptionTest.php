@@ -133,7 +133,7 @@ class AllItemsFilteredExceptionTest extends TestCase
     public function test_weighted_pool_throws_when_custom_filter_rejects_all(): void
     {
         // Arrange — 全アイテムを拒否するカスタムフィルター
-        $rejectAll = new class implements ItemFilterInterface {
+        $rejectAll = new class () implements ItemFilterInterface {
             public function accepts(mixed $item, int $weight): bool
             {
                 return false;
@@ -151,7 +151,7 @@ class AllItemsFilteredExceptionTest extends TestCase
     public function test_destructive_pool_throws_when_custom_filter_rejects_all(): void
     {
         // Arrange — 全アイテムを拒否するカスタムフィルター
-        $rejectAll = new class implements ItemFilterInterface {
+        $rejectAll = new class () implements ItemFilterInterface {
             public function accepts(mixed $item, int $weight): bool
             {
                 return false;
@@ -169,7 +169,7 @@ class AllItemsFilteredExceptionTest extends TestCase
     public function test_box_pool_throws_when_custom_filter_rejects_all(): void
     {
         // Arrange — 全アイテムを拒否するカスタム CountedItemFilterInterface
-        $rejectAll = new class implements CountedItemFilterInterface {
+        $rejectAll = new class () implements CountedItemFilterInterface {
             public function accepts(mixed $item, int $weight): bool
             {
                 return false;
