@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace WeightedSample\Pool;
 
+use WeightedSample\Exception\AllItemsFilteredException;
 use WeightedSample\Exception\EmptyPoolException;
 use WeightedSample\Filter\ItemFilterInterface;
 use WeightedSample\Filter\PositiveValueFilter;
 use WeightedSample\Randomizer\RandomizerInterface;
-use WeightedSample\Randomizer\SeededRandomizer;
+use WeightedSample\Randomizer\SecureRandomizer;
 use WeightedSample\Selector\PrefixSumSelector;
 use WeightedSample\Selector\SelectorInterface;
 
@@ -56,36 +57,36 @@ final class DestructivePool implements ExhaustiblePoolInterface
 
     /**
      * @template TItem
-     * @param iterable<TItem>                $items
-     * @param \Closure(TItem): int           $weightFn
-     * @param class-string<SelectorInterface> $selectorClass
+     * @param iterable<TItem>                    $items
+     * @param \Closure(TItem): int               $weightFn
+     * @param ItemFilterInterface<TItem>          $filter
+     * @param class-string<SelectorInterface>     $selectorClass
+     * @param RandomizerInterface                 $randomizer
      * @return self<TItem>
      */
     public static function of(
         iterable $items,
         \Closure $weightFn,
-        ?ItemFilterInterface $filter = null,
-        ?RandomizerInterface $randomizer = null,
+        ItemFilterInterface $filter = new PositiveValueFilter(),
         string $selectorClass = PrefixSumSelector::class,
+        RandomizerInterface $randomizer = new SecureRandomizer(),
     ): self {
-        $filter ??= new PositiveValueFilter();
-
         /** @var list<TItem> $filtered */
         $filtered = [];
         foreach ($items as $item) {
-            if ($filter->accepts($item, $weightFn($item), null)) {
+            if ($filter->accepts($item, $weightFn($item))) {
                 $filtered[] = $item;
             }
         }
 
         if ($filtered === []) {
-            throw new EmptyPoolException('Cannot create a DestructivePool: no items remain after filtering.');
+            throw new AllItemsFilteredException('Cannot create a DestructivePool: no items remain after filtering.');
         }
 
         return new self(
             $filtered,
             array_map($weightFn, $filtered),
-            $randomizer ?? new SeededRandomizer(),
+            $randomizer,
             $selectorClass,
         );
     }

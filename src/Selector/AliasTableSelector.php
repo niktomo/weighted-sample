@@ -95,8 +95,15 @@ final readonly class AliasTableSelector implements SelectorInterface
 
         // float probability を整数閾値に変換: threshold[i] = round(probability[i] * W)
         // coin_value (= r % W ∈ [0, W)) と比較するための分子
+        // Safety clamp: weight > 0 items must always be reachable from their own column.
+        // Vose's algorithm guarantees threshold[i] ≥ 1 in exact arithmetic, but accumulated
+        // float errors can drift by ±1. Clamping to [1, W] prevents any item from becoming
+        // unreachable due to rounding — critical for monetary/trust-sensitive applications.
         /** @var list<int> $threshold */
-        $threshold = array_map(fn (float $probability) => (int) round($probability * $total), $probability);
+        $threshold = array_map(
+            fn (float $p) => max(1, min($total, (int) round($p * $total))),
+            $probability,
+        );
         $this->threshold = $threshold;
         /** @var list<int> $alias */
         $this->alias = $alias;

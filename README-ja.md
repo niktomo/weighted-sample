@@ -27,6 +27,9 @@ composer require niktomo/weighted-sample
 | `DestructivePool` | 各アイテムは1回のみ抽選可能。抽選済みアイテムは除外 | する |
 | `BoxPool` | 各アイテムに在庫数があり、抽選ごとに在庫を消費 | する |
 
+全プールのデフォルトは `SecureRandomizer`（`\Random\Engine\Secure`）です — 設定なしで暗号学的に安全な乱数を使用します。
+`SeededRandomizer(int $seed)` はテストや再現性が必要なシミュレーション専用です。
+
 ---
 
 ## WeightedPool
@@ -134,8 +137,11 @@ while (! $pool->isEmpty()) {
 
 ## アイテムフィルター
 
-デフォルトでは `weight ≤ 0`（`BoxPool` では `stock ≤ 0`）のアイテムは例外なく除外されます。
-カスタムフィルターを注入して挙動を変更できます。
+フィルタリングは `of()` の**構築時**に適用されます — 除外されたアイテムはプールに含まれず、
+`draw()` で抽選されることはありません。
+
+デフォルトでは `weight ≤ 0` のアイテムは例外なく除外されます。`BoxPool` では `stock ≤ 0` も除外対象です。
+全アイテムが除外された場合は `AllItemsFilteredException` がスローされます。
 
 ### デフォルト: PositiveValueFilter（サイレント除外）
 
@@ -161,10 +167,11 @@ $pool = WeightedPool::of(
 
 ```php
 use WeightedSample\Filter\CompositeFilter;
+use WeightedSample\Filter\ItemFilterInterface;
 use WeightedSample\Filter\PositiveValueFilter;
 
-$enabledFilter = new class implements \WeightedSample\Filter\ItemFilterInterface {
-    public function accepts(mixed $item, int $weight, ?int $count): bool
+$enabledFilter = new class implements ItemFilterInterface {
+    public function accepts(mixed $item, int $weight): bool
     {
         return $item['enabled'] === true;
     }
@@ -176,6 +183,44 @@ $pool = WeightedPool::of(
     filter: new CompositeFilter([new PositiveValueFilter(), $enabledFilter]),
 );
 ```
+
+### BoxPool 用カスタムフィルター
+
+`BoxPool` は `CountedItemFilterInterface` を要求します。これは `ItemFilterInterface` を拡張し、
+weight に加えて在庫数も受け取る `acceptsWithCount()` メソッドを持ちます。
+
+```php
+use WeightedSample\Filter\CountedItemFilterInterface;
+
+$activeFilter = new class implements CountedItemFilterInterface {
+    public function accepts(mixed $item, int $weight): bool
+    {
+        return $item['enabled'] === true && $weight > 0;
+    }
+
+    public function acceptsWithCount(mixed $item, int $weight, int $count): bool
+    {
+        return $this->accepts($item, $weight) && $count > 0;
+    }
+};
+
+$pool = BoxPool::of(
+    $items,
+    fn(array $item) => $item['weight'],
+    fn(array $item) => $item['stock'],
+    filter: $activeFilter,
+);
+```
+
+### 例外の種類
+
+| 例外 | スローされるタイミング |
+|---|---|
+| `AllItemsFilteredException` | 構築時: フィルターによって全アイテムが除外された |
+| `EmptyPoolException` | 実行時: 枯渇したプールで `draw()` を呼んだ |
+
+`AllItemsFilteredException` は `EmptyPoolException` のサブクラスです。
+既存の `catch (EmptyPoolException)` ブロックはそのまま動作します。
 
 ---
 
@@ -220,6 +265,10 @@ $result = $pool->draw();
 
 シードなしの場合は `\Random\Engine\Secure` を使用し、暗号学的に安全な乱数を生成します。
 
+> **注意:** シードを指定した `SeededRandomizer` は内部で `Mt19937` を使用します。
+> `Mt19937` は**暗号学的に安全ではありません**。固定シードはテストや再現性が必要なシミュレーション専用とし、
+> 本番環境の抽選には使用しないでください。
+
 ---
 
 ## セレクターアルゴリズム
@@ -250,6 +299,10 @@ $pool = WeightedPool::of(
 **PrefixSumSelector（デフォルト）を選ぶとき:**
 構築から抽選まで完全整数演算。ビルドあたりのオーバーヘッドが小さく、小〜中規模の
 アイテム数では O(log n) でも十分高速。一般的なゲームガチャのデフォルトとして適しています。
+
+> **注意:** `AliasTableSelector` は `n × W ≤ PHP_INT_MAX`（n = アイテム数、W = 重みの合計）が必要です。
+> `PrefixSumSelector` は `W ≤ PHP_INT_MAX` のみを要求するため、同じ合計重みに対してより多くのアイテムを扱えます。
+> ただし両セレクターとも n 件分のデータをメモリに保持します。
 
 ### 速度比較 — 各アルゴリズムで 100万回抽選
 
@@ -316,6 +369,9 @@ $pool = WeightedPool::of($items, fn(array $item) => $item['weight']);
 
 $item = $pool->draw(); // PHPStan は array{name: string, weight: int} と推論
 ```
+
+フィルターインターフェースもジェネリクス対応しています。`ItemFilterInterface<T>` および
+`CountedItemFilterInterface<T>` はアイテムの型を静的解析で追跡します。
 
 ---
 

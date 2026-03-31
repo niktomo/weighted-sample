@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-03-31
+
+### Added
+- `SecureRandomizer` — cryptographically secure randomizer backed by `\Random\Engine\Secure`; now the default for all pools
+- `CountedItemFilterInterface` — extends `ItemFilterInterface` with `acceptsWithCount(item, weight, count): bool` for `BoxPool`-specific filtering
+- `AllItemsFilteredException` — extends `EmptyPoolException`; thrown at construction time when all items are excluded by the filter (distinguishes construction failure from runtime exhaustion)
+- `@template T` generics on `ItemFilterInterface<T>` and `CountedItemFilterInterface<T>` for full PHPStan level 8 type tracking through filters
+- `AliasTableSelector`: safety clamp `max(1, min(W, round(p × W)))` on threshold values — guarantees any item with weight > 0 is always reachable, preventing selection failure due to float rounding in Vose's algorithm
+- `PrefixSumIndex`: overflow guard (`runningTotal > PHP_INT_MAX - weight`) throws `\OverflowException` before integer overflow can occur
+
+### Changed
+- **BREAKING** `SeededRandomizer` now requires an explicit `int $seed`; the optional `?int $seed = null` form (which silently fell back to `Secure` engine) is removed — use `SecureRandomizer` for seedless production use
+- **BREAKING** All pool `of()` parameter order changed to `filter, selectorClass, randomizer` (nullable `randomizer` moved last)
+- **BREAKING** All pool `of()` methods now accept `RandomizerInterface $randomizer = new SecureRandomizer()` (non-nullable) instead of `?RandomizerInterface $randomizer = null`
+- **BREAKING** `BoxPool::of()` `$filter` parameter type changed from `ItemFilterInterface` to `CountedItemFilterInterface`
+- **BREAKING** `EmptyPoolException` is no longer `final` to allow `AllItemsFilteredException` to extend it
+- `PositiveValueFilter` and `StrictValueFilter` now implement `CountedItemFilterInterface` (backward compatible — they already handled count logic)
+- `CompositeFilter` now implements `CountedItemFilterInterface`; delegates to `acceptsWithCount()` when an inner filter implements it, falls back to `accepts()` otherwise
+
+### Removed
+- **BREAKING** `SeededRandomizer::__construct(?int $seed = null)` — seedless construction removed; replaced by `SecureRandomizer`
+
 ## [0.2.0] - 2026-03-31
 
 ### Added

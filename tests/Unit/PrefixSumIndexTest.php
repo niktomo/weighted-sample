@@ -117,4 +117,36 @@ class PrefixSumIndexTest extends TestCase
         // Act
         new PrefixSumIndex([10, -1, 5]);
     }
+
+    public function test_throws_on_weight_sum_overflow(): void
+    {
+        // Arrange — PHP_INT_MAX を超える合計になるウェイト
+        $almostMax = intdiv(\PHP_INT_MAX, 2);
+
+        // Assert
+        $this->expectException(\OverflowException::class);
+
+        // Act
+        new PrefixSumIndex([$almostMax, $almostMax, $almostMax]);
+    }
+
+    public function test_minimum_configuration_single_item_weight_one(): void
+    {
+        // Arrange — 最小構成: weight=1 × n=1
+        $index = new PrefixSumIndex([1]);
+
+        // Act & Assert
+        $this->assertSame(1, $index->total(), 'weight=1 × n=1 の合計が 1 であること');
+        $this->assertSame(0, $index->pick(0), 'weight=1 × n=1 で rand=0 のとき index 0 が返ること');
+    }
+
+    public function test_does_not_throw_just_below_overflow(): void
+    {
+        // Arrange — PHP_INT_MAX と 1 で構築 → 合計は PHP_INT_MAX を超えないこと
+        // PHP_INT_MAX - 1 + 1 = PHP_INT_MAX (overflow しない)
+        $index = new PrefixSumIndex([\PHP_INT_MAX - 1, 1]);
+
+        // Assert — 例外が発生せず total が PHP_INT_MAX になること
+        $this->assertSame(\PHP_INT_MAX, $index->total(), 'overflow 直前の合計が PHP_INT_MAX であること');
+    }
 }

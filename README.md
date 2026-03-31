@@ -27,6 +27,9 @@ composer require niktomo/weighted-sample
 | `DestructivePool` | Each item can be drawn at most once; drawn items are removed | Yes |
 | `BoxPool` | Each item has a finite stock count; stock is decremented on draw | Yes |
 
+All pools default to `SecureRandomizer` (`\Random\Engine\Secure`) — cryptographically safe with no configuration required.
+Inject `SeededRandomizer(int $seed)` only for tests or reproducible simulations.
+
 ---
 
 ## WeightedPool
@@ -135,8 +138,11 @@ while (! $pool->isEmpty()) {
 
 ## Item Filtering
 
-By default, items with `weight ≤ 0` (or `stock ≤ 0` for `BoxPool`) are silently excluded.
-You can inject a custom filter to change this behavior.
+Filtering is applied during `of()` construction — excluded items are never part of the pool
+and cannot be drawn at runtime.
+
+By default, items with `weight ≤ 0` are silently excluded. `BoxPool` additionally excludes
+items with `stock ≤ 0`. If all items are excluded, `AllItemsFilteredException` is thrown.
 
 ### Default: PositiveValueFilter (silent exclusion)
 
@@ -162,10 +168,11 @@ $pool = WeightedPool::of(
 
 ```php
 use WeightedSample\Filter\CompositeFilter;
+use WeightedSample\Filter\ItemFilterInterface;
 use WeightedSample\Filter\PositiveValueFilter;
 
-$enabledFilter = new class implements \WeightedSample\Filter\ItemFilterInterface {
-    public function accepts(mixed $item, int $weight, ?int $count): bool
+$enabledFilter = new class implements ItemFilterInterface {
+    public function accepts(mixed $item, int $weight): bool
     {
         return $item['enabled'] === true;
     }
@@ -177,6 +184,43 @@ $pool = WeightedPool::of(
     filter: new CompositeFilter([new PositiveValueFilter(), $enabledFilter]),
 );
 ```
+
+### Custom filter for BoxPool
+
+`BoxPool` requires `CountedItemFilterInterface`, which extends `ItemFilterInterface` with
+an `acceptsWithCount()` method that receives the stock count as well as the weight.
+
+```php
+use WeightedSample\Filter\CountedItemFilterInterface;
+
+$activeFilter = new class implements CountedItemFilterInterface {
+    public function accepts(mixed $item, int $weight): bool
+    {
+        return $item['enabled'] === true && $weight > 0;
+    }
+
+    public function acceptsWithCount(mixed $item, int $weight, int $count): bool
+    {
+        return $this->accepts($item, $weight) && $count > 0;
+    }
+};
+
+$pool = BoxPool::of(
+    $items,
+    fn(array $item) => $item['weight'],
+    fn(array $item) => $item['stock'],
+    filter: $activeFilter,
+);
+```
+
+### Exception types
+
+| Exception | When thrown |
+|---|---|
+| `AllItemsFilteredException` | Construction: all items were excluded by the filter |
+| `EmptyPoolException` | Runtime: `draw()` called on an exhausted pool |
+
+`AllItemsFilteredException` extends `EmptyPoolException` — existing `catch (EmptyPoolException)` blocks continue to work.
 
 ---
 
@@ -221,6 +265,9 @@ $result = $pool->draw();
 
 The default (no seed) uses `\Random\Engine\Secure` for cryptographically safe randomness.
 
+> **Note:** `SeededRandomizer` with a seed uses `Mt19937`, which is **not** cryptographically
+> secure. Use a fixed seed only for testing or deterministic simulations, never for production draws.
+
 ---
 
 ## Selector Algorithms
@@ -251,6 +298,10 @@ Prefer it when `draw()` is called frequently on pools with many items (≥ ~50).
 **When to use PrefixSumSelector (default):**
 Integer-only arithmetic throughout. Slightly lower overhead per build, and O(log n) pick
 is fast enough for small to medium item sets. Good default for most game gacha use cases.
+
+> **Note:** `AliasTableSelector` requires `n × W ≤ PHP_INT_MAX` (n = item count, W = total weight).
+> `PrefixSumSelector` only requires `W ≤ PHP_INT_MAX`, so it tolerates a larger item count for
+> the same total weight. Both selectors hold all n items in memory.
 
 ### Speed comparison — 1,000,000 picks each
 
@@ -318,6 +369,9 @@ $pool = WeightedPool::of($items, fn(array $item) => $item['weight']);
 
 $item = $pool->draw(); // PHPStan infers array{name: string, weight: int}
 ```
+
+Filter interfaces are also generic — `ItemFilterInterface<T>` and `CountedItemFilterInterface<T>`
+carry the item type through static analysis.
 
 ---
 

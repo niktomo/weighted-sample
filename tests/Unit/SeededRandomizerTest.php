@@ -23,19 +23,6 @@ class SeededRandomizerTest extends TestCase
         );
     }
 
-    public function test_no_seed_produces_values_within_range(): void
-    {
-        // Arrange — seed なし（デフォルト: Secure エンジン）
-        $randomizer = new SeededRandomizer();
-
-        // Act & Assert — 1000回試行してすべて範囲内であることを確認
-        for ($i = 0; $i < 1000; $i++) {
-            $result = $randomizer->next(100);
-            $this->assertGreaterThanOrEqual(0, $result, 'seed なしの next() が 0 以上を返すこと');
-            $this->assertLessThan(100, $result, 'seed なしの next() が max 未満を返すこと');
-        }
-    }
-
     public function test_same_seed_produces_same_sequence(): void
     {
         // Arrange

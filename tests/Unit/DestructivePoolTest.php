@@ -288,7 +288,7 @@ class DestructivePoolTest extends TestCase
 
             public function next(int $max): int
             {
-                return min($this->value, $max - 1);
+                return $this->value;
             }
         };
     }

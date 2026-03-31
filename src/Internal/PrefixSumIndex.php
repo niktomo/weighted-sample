@@ -30,6 +30,9 @@ final readonly class PrefixSumIndex
             if ($weight <= 0) {
                 throw new \InvalidArgumentException("Each weight must be a positive integer, {$weight} given.");
             }
+            if ($runningTotal > \PHP_INT_MAX - $weight) {
+                throw new \OverflowException('Total weight exceeds PHP_INT_MAX.');
+            }
             $runningTotal += $weight;
             $sums[]        = $runningTotal;
         }

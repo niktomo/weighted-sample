@@ -4,17 +4,21 @@ declare(strict_types=1);
 
 namespace WeightedSample\Randomizer;
 
+/**
+ * Deterministic randomizer backed by \Random\Engine\Mt19937.
+ *
+ * Use this only for testing or reproducible simulations — never for production draws.
+ * Mt19937 is NOT cryptographically secure.
+ *
+ * @see SecureRandomizer for production use
+ */
 final readonly class SeededRandomizer implements RandomizerInterface
 {
     private \Random\Randomizer $randomizer;
 
-    public function __construct(?int $seed = null)
+    public function __construct(int $seed)
     {
-        $engine = $seed !== null
-            ? new \Random\Engine\Mt19937($seed)
-            : new \Random\Engine\Secure();
-
-        $this->randomizer = new \Random\Randomizer($engine);
+        $this->randomizer = new \Random\Randomizer(new \Random\Engine\Mt19937($seed));
     }
 
     public function next(int $max): int

@@ -73,6 +73,40 @@ class AliasTableSelectorTest extends TestCase
         $this->assertSame(1, $result, 'column=0 で coinValue がしきい値以上のとき alias index 1 が返ること');
     }
 
+    public function test_all_items_reachable_with_extreme_weight_ratio(): void
+    {
+        // Arrange — 重み比 1:999999 の極端なケース
+        // threshold[0] は float 演算で 0 に近づく可能性があるが、クランプにより最低 1 が保証される
+        // クランプなし: threshold[0] = round(n*w[0]) = round(2) = 2 (この場合は安全だが、
+        // Vose ループで多段降格が起きるケースへの回帰防止として記録する)
+        $selector = AliasTableSelector::build([1, 999999]);
+
+        // r=0 → column=intdiv(0, 999999+1)=0, coinValue=0 < threshold[0](≥1) → index 0 が返ること
+        // threshold[0]=0 ならば coinValue < 0 が常に false となり index 0 は絶対に返らない
+        $result = $selector->pick($this->sequenceRandomizer(0));
+
+        // Assert — index 0 が返ること（クランプが機能し threshold[0] ≥ 1 であること）
+        $this->assertSame(0, $result, '極端な重み比でも weight>0 のアイテム(index 0)が r=0 で選択されること（threshold ≥ 1 のクランプ保証）');
+    }
+
+    public function test_all_items_appear_in_sufficient_draws_with_skewed_weights(): void
+    {
+        // Arrange — 重み [1, 9, 90] で 10000 回引いたとき全アイテムが出ること
+        $selector   = AliasTableSelector::build([1, 9, 90]);
+        $randomizer = new SeededRandomizer(42);
+        $seen       = [];
+
+        // Act
+        for ($i = 0; $i < 10000; $i++) {
+            $seen[$selector->pick($randomizer)] = true;
+        }
+
+        // Assert — 全 3 アイテムが少なくとも 1 回は選ばれること
+        $this->assertArrayHasKey(0, $seen, 'weight=1 のアイテム(index 0)が 10000 回中に少なくとも 1 回出ること');
+        $this->assertArrayHasKey(1, $seen, 'weight=9 のアイテム(index 1)が 10000 回中に少なくとも 1 回出ること');
+        $this->assertArrayHasKey(2, $seen, 'weight=90 のアイテム(index 2)が 10000 回中に少なくとも 1 回出ること');
+    }
+
     /**
      * @param int ...$values
      */

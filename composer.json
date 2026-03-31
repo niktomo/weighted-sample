@@ -1,7 +1,7 @@
 {
     "name": "niktomo/weighted-sample",
-    "description": "Weighted random sampling with box-gacha and destructive draw modes",
-    "keywords": ["weighted", "random", "sample", "gacha", "lottery", "probability", "selection", "algorithm"],
+    "description": "Weighted random sampling for PHP 8.2+. Supports repeatable draws (WeightedPool), destructive draws (DestructivePool), and box-gacha limited inventory (BoxPool) with alias-method O(1) picking and cryptographically secure randomness by default.",
+    "keywords": ["weighted", "random", "sample", "gacha", "box-gacha", "lottery", "raffle", "probability", "selection", "alias-method", "walker-alias", "weighted-shuffle", "cryptographically-secure"],
     "homepage": "https://github.com/niktomo/weighted-sample",
     "authors": [
         {
