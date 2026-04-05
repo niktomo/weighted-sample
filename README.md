@@ -64,7 +64,6 @@ tend to appear earlier in the sequence.
 
 ```php
 use WeightedSample\Pool\DestructivePool;
-use WeightedSample\Exception\EmptyPoolException;
 
 $pool = DestructivePool::of(
     [
@@ -75,7 +74,10 @@ $pool = DestructivePool::of(
     fn(array $item) => $item['weight'],
 );
 
-// Draw all items in weighted-random order — each item appears exactly once
+// Single draw — picks one item, removes it from the pool
+$winner = $pool->draw();
+
+// Or draw all in weighted-random order — each item appears exactly once
 $order = [];
 while (! $pool->isEmpty()) {
     $order[] = $pool->draw()['id']; // e.g. [3, 2, 1] or [3, 1, 2] etc.
@@ -83,6 +85,9 @@ while (! $pool->isEmpty()) {
 
 // The original array is never modified — DestructivePool works on an internal copy
 ```
+
+> **Note:** `DestructivePool` is in-memory only. To resume across requests, persist which items
+> remain and reconstruct the pool from those on the next request.
 
 ---
 
@@ -98,24 +103,49 @@ until its stock runs out.
 ```php
 use WeightedSample\Pool\BoxPool;
 
-// 10 prizes total: 1 Gold, 3 Silver, 6 Bronze
-$pool = BoxPool::of(
-    [
-        ['name' => 'Gold',   'weight' => 10, 'stock' => 1],
-        ['name' => 'Silver', 'weight' => 30, 'stock' => 3],
-        ['name' => 'Bronze', 'weight' => 60, 'stock' => 6],
-    ],
+$items = [
+    ['name' => 'A', 'weight' => 10, 'stock' =>  1],
+    ['name' => 'B', 'weight' => 20, 'stock' =>  3],
+    ['name' => 'C', 'weight' => 20, 'stock' =>  3],
+    ['name' => 'D', 'weight' => 20, 'stock' =>  3],
+    ['name' => 'E', 'weight' => 30, 'stock' =>  5],
+    ['name' => 'F', 'weight' => 40, 'stock' => 10],
+    ['name' => 'G', 'weight' => 30, 'stock' =>  5],
+    ['name' => 'H', 'weight' => 30, 'stock' =>  5],
+    ['name' => 'I', 'weight' => 40, 'stock' => 10],
+    ['name' => 'J', 'weight' => 40, 'stock' => 10],
+];
+
+$newBox = fn() => BoxPool::of(
+    $items,
     fn(array $item) => $item['weight'],
-    fn(array $item) => $item['stock'],      // <-- stock extractor
+    fn(array $item) => $item['stock'],
 );
 
-// Draw until the box is empty (exactly 10 draws)
-while (! $pool->isEmpty()) {
-    $item = $pool->draw(); // returns the drawn item; stock is managed internally
-}
+// The box holds 55 prizes. A player draws 50 at a time, 3 rounds.
+//
+// Round 1 (draws  1– 50): 50 succeed — 5 remain in the current box
+// Round 2 (draws 51– 55): box empties after 5 draws — a fresh box is opened (55 prizes)
+//          (draws 56–100): 45 draws from the new box — 10 remain
+// Round 3 (draws 101–110): box empties after 10 draws — a fresh box is opened (55 prizes)
+//          (draws 111–150): 40 draws from the new box — 15 remain
 
-// The original array is never modified — BoxPool copies the data on construction
+$pool = $newBox();
+
+for ($round = 1; $round <= 3; $round++) {
+    $drawn = [];
+    for ($i = 0; $i < 50; $i++) {
+        if ($pool->isEmpty()) {
+            $pool = $newBox(); // open a fresh box and continue drawing
+        }
+        $drawn[] = $pool->draw();
+    }
+    // process $drawn for this round
+}
 ```
+
+> **Note:** `BoxPool` is in-memory only. To resume across requests, persist the remaining
+> stock counts and reconstruct the pool from those on the next request.
 
 **How BoxPool manages stock internally:**
 - On construction, BoxPool copies the items and records each stock count internally.

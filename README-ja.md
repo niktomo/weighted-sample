@@ -64,7 +64,6 @@ $result = $pool->draw(); // 90% の確率で R、9% で SR、1% で SSR
 
 ```php
 use WeightedSample\Pool\DestructivePool;
-use WeightedSample\Exception\EmptyPoolException;
 
 $pool = DestructivePool::of(
     [
@@ -75,6 +74,9 @@ $pool = DestructivePool::of(
     fn(array $item) => $item['weight'],
 );
 
+// 単発抽選 — 1件を抽選してプールから除外する
+$winner = $pool->draw();
+
 // 全アイテムを重み付きランダム順で抽選 — 各アイテムは必ず1回だけ出る
 $order = [];
 while (! $pool->isEmpty()) {
@@ -83,6 +85,9 @@ while (! $pool->isEmpty()) {
 
 // 元の配列は変更されない — DestructivePool は内部コピーで動作する
 ```
+
+> **注意:** `DestructivePool` はインメモリのみです。リクエストをまたいで再開するには、
+> 残アイテムを永続化し、次回リクエスト時にそのアイテムだけでプールを再構築してください。
 
 ---
 
@@ -97,24 +102,49 @@ while (! $pool->isEmpty()) {
 ```php
 use WeightedSample\Pool\BoxPool;
 
-// 合計10枚: Gold×1, Silver×3, Bronze×6
-$pool = BoxPool::of(
-    [
-        ['name' => 'Gold',   'weight' => 10, 'stock' => 1],
-        ['name' => 'Silver', 'weight' => 30, 'stock' => 3],
-        ['name' => 'Bronze', 'weight' => 60, 'stock' => 6],
-    ],
+$items = [
+    ['name' => 'A', 'weight' => 10, 'stock' =>  1],
+    ['name' => 'B', 'weight' => 20, 'stock' =>  3],
+    ['name' => 'C', 'weight' => 20, 'stock' =>  3],
+    ['name' => 'D', 'weight' => 20, 'stock' =>  3],
+    ['name' => 'E', 'weight' => 30, 'stock' =>  5],
+    ['name' => 'F', 'weight' => 40, 'stock' => 10],
+    ['name' => 'G', 'weight' => 30, 'stock' =>  5],
+    ['name' => 'H', 'weight' => 30, 'stock' =>  5],
+    ['name' => 'I', 'weight' => 40, 'stock' => 10],
+    ['name' => 'J', 'weight' => 40, 'stock' => 10],
+];
+
+$newBox = fn() => BoxPool::of(
+    $items,
     fn(array $item) => $item['weight'],
-    fn(array $item) => $item['stock'],      // <-- 在庫数を返すクロージャ
+    fn(array $item) => $item['stock'],
 );
 
-// ボックスが空になるまで引く（合計10回）
-while (! $pool->isEmpty()) {
-    $item = $pool->draw(); // 抽選したアイテムを返す。在庫は内部で管理
-}
+// ボックスには55個の景品が入っている。プレイヤーは50連を3ラウンド引く。
+//
+// 第1回（  1〜 50回目）: 50回成功 — 残り5個
+// 第2回（ 51〜 55回目）: 5回でボックスが空 → 新しいボックスを開封（55個）
+//      （ 56〜100回目）: 新しいボックスから45回 — 残り10個
+// 第3回（101〜110回目）: 10回でボックスが空 → 新しいボックスを開封（55個）
+//      （111〜150回目）: 新しいボックスから40回 — 残り15個
 
-// 元の配列は変更されない — BoxPool は生成時にデータをコピーする
+$pool = $newBox();
+
+for ($round = 1; $round <= 3; $round++) {
+    $drawn = [];
+    for ($i = 0; $i < 50; $i++) {
+        if ($pool->isEmpty()) {
+            $pool = $newBox(); // 新しいボックスを開封して続きを引く
+        }
+        $drawn[] = $pool->draw();
+    }
+    // $drawn をこのラウンドの結果として処理する
+}
 ```
+
+> **注意:** `BoxPool` はインメモリのみです。リクエストをまたいで再開するには、
+> 残在庫数を永続化し、次回リクエスト時にそのアイテムだけでプールを再構築してください。
 
 **BoxPool の在庫管理の仕組み:**
 - 生成時に渡した配列をコピーし、在庫カウンタを内部に保持します。
