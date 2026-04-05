@@ -9,7 +9,7 @@ use WeightedSample\Randomizer\RandomizerInterface;
 /**
  * Walker's Alias Method selector.
  *
- * Build: O(n) — constructs alias table from integer weights.
+ * Build: O(n) — constructs alias table from integer weights using pure integer arithmetic.
  * Pick:  O(1) — single random call, pure integer arithmetic.
  *
  *   r = next(n × W)
@@ -17,15 +17,16 @@ use WeightedSample\Randomizer\RandomizerInterface;
  *   coinValue = r % W   — coin flip value [0, W)
  *   return coinValue < threshold[column] ? column : alias[column]
  *
- * Constraint: n × W must not exceed PHP_INT_MAX (≈ 9.2 × 10^18).
- *   Example: 10,000 items with total weight 1,000,000 → n×W = 10^10 (safe).
+ * Constraint: (n + 1) × W must not exceed PHP_INT_MAX (≈ 9.2 × 10^18).
+ *   The +1 provides headroom for the intermediate sum prob[l] + prob[s] in Vose's algorithm.
+ *   Example: 10,000 items with total weight 1,000,000 → 10,001 × 10^6 ≈ 10^10 (safe).
  *
- * Note on floating-point during build:
- *   Vose's algorithm internally uses float to redistribute scaled probabilities.
- *   The final threshold[i] = round(probability[i] × W) converts back to int.
- *   Due to 53-bit float precision, threshold[i] may be off by ±1 in pathological
- *   cases (e.g. weights spanning many orders of magnitude), introducing a bias of
- *   at most 1/W. For typical integer weights this is negligible.
+ * Integer-only build:
+ *   prob[i] = n × w[i] replaces the float-scaled probability n × w[i] / W.
+ *   Partition: prob[i] < W → small, prob[i] ≥ W → large.
+ *   Redistribution: prob[l] = prob[l] + prob[s] − W  (exact integer, no rounding error).
+ *   threshold[s] = prob[s] directly — no float conversion or round() needed.
+ *   This eliminates the ±1/W bias present in float-based implementations.
  *
  * Use this selector when draw() is called frequently on large item sets.
  * For small sets or infrequent draws, PrefixSumSelector (integer-only) is sufficient.
@@ -49,64 +50,78 @@ final readonly class AliasTableSelector implements SelectorInterface
     {
         $itemCount = count($weights);
         $this->count = $itemCount;
+
+        if ($itemCount === 0) {
+            throw new \InvalidArgumentException('weights must not be empty.');
+        }
+
         $total = array_sum($weights);
         $this->total = $total;
 
-        if ($total > 0 && $itemCount > intdiv(\PHP_INT_MAX, $total)) {
+        // Vose's algorithm uses prob[l] + prob[s] as an intermediate value.
+        // prob[l] ≤ n × max(w[i]) ≤ n × W, and prob[s] < W, so the sum is at most (n+1) × W.
+        // Require (n+1) × W ≤ PHP_INT_MAX: throw when n ≥ ⌊PHP_INT_MAX / W⌋.
+        if ($total > 0 && $itemCount >= intdiv(\PHP_INT_MAX, $total)) {
             throw new \OverflowException(
                 "n × W ({$itemCount} × {$total}) would exceed PHP_INT_MAX. Reduce item count or total weight.",
             );
         }
 
-        // Scale probabilities: scaled[i] = n * w[i] / W ∈ [0, n]
-        $scaled = array_map(fn (int $w) => $itemCount * $w / $total, $weights);
-
+        // Pass 1: compute integer probabilities and partition into small / large in one loop.
+        //   prob[i] = n × w[i]  — integer, no division required
+        //   small   if prob[i] < W  (weight underrepresented in its column)
+        //   large   if prob[i] ≥ W
+        //   threshold[i] defaults to W  ≡ probability = 1.0 (column always wins, alias unused)
+        //   alias[i]     defaults to i  (safe sentinel; unreachable when threshold = W)
+        /** @var list<int> $prob */
+        $prob      = [];
+        /** @var list<int> $threshold */
+        $threshold = [];
+        /** @var list<int> $alias */
+        $alias     = [];
         /** @var list<int> $small */
-        $small = [];
+        $small     = [];
         /** @var list<int> $large */
-        $large = [];
+        $large     = [];
 
-        foreach ($scaled as $index => $scaledProbability) {
-            if ($scaledProbability < 1.0) {
+        foreach ($weights as $index => $weight) {
+            if ($weight <= 0) {
+                throw new \InvalidArgumentException("Each weight must be a positive integer, {$weight} given.");
+            }
+            $p         = $itemCount * $weight;   // n × w[i], exact integer
+            $prob[]    = $p;
+            $threshold[] = $total;               // default: coinValue always < W → column wins
+            $alias[]   = $index;                 // default alias: self
+            if ($p < $total) {
                 $small[] = $index;
             } else {
                 $large[] = $index;
             }
         }
 
-        $probability = array_fill(0, $itemCount, 1.0);
-        $alias       = array_fill(0, $itemCount, 0);
-
+        // Pass 2: Vose's algorithm with pure integer arithmetic.
+        //   threshold[s] = prob[s]  — exact, no float conversion or round() needed.
+        //   prob[l]      = prob[l] + prob[s] − W  — strictly decreasing, stays in [1, n×W].
+        //   Safety clamp [1, W]: all weight > 0 items are reachable from their own column.
+        //   With exact integer arithmetic this is purely defensive; no ±1/W bias exists.
         while ($small !== [] && $large !== []) {
             $smallIndex = array_pop($small);
             $largeIndex = array_pop($large);
 
-            $probability[$smallIndex] = $scaled[$smallIndex];
-            $alias[$smallIndex]       = $largeIndex;
+            $threshold[$smallIndex] = max(1, min($total, $prob[$smallIndex]));
+            $alias[$smallIndex]     = $largeIndex;
 
-            $scaled[$largeIndex] = ($scaled[$largeIndex] + $scaled[$smallIndex]) - 1.0;
+            $prob[$largeIndex] = $prob[$largeIndex] + $prob[$smallIndex] - $total;
 
-            if ($scaled[$largeIndex] < 1.0) {
+            if ($prob[$largeIndex] < $total) {
                 $small[] = $largeIndex;
             } else {
                 $large[] = $largeIndex;
             }
         }
 
-        // float probability を整数閾値に変換: threshold[i] = round(probability[i] * W)
-        // coin_value (= r % W ∈ [0, W)) と比較するための分子
-        // Safety clamp: weight > 0 items must always be reachable from their own column.
-        // Vose's algorithm guarantees threshold[i] ≥ 1 in exact arithmetic, but accumulated
-        // float errors can drift by ±1. Clamping to [1, W] prevents any item from becoming
-        // unreachable due to rounding — critical for monetary/trust-sensitive applications.
-        /** @var list<int> $threshold */
-        $threshold = array_map(
-            fn (float $p) => max(1, min($total, (int) round($p * $total))),
-            $probability,
-        );
-        $this->threshold = $threshold;
-        /** @var list<int> $alias */
-        $this->alias = $alias;
+        $this->threshold = array_values($threshold);
+        $this->alias     = array_values($alias);
     }
 
     /**

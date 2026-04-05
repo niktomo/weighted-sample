@@ -74,22 +74,30 @@ final class BoxPool implements ExhaustiblePoolInterface
         string $selectorClass = PrefixSumSelector::class,
         RandomizerInterface $randomizer = new SecureRandomizer(),
     ): self {
-        /** @var list<TItem> $filtered */
-        $filtered = [];
+        /** @var list<TItem> $filteredItems */
+        $filteredItems = [];
+        /** @var list<int> $filteredWeights */
+        $filteredWeights = [];
+        /** @var list<int> $filteredCounts */
+        $filteredCounts = [];
         foreach ($items as $item) {
-            if ($filter->acceptsWithCount($item, $weightFn($item), $countFn($item))) {
-                $filtered[] = $item;
+            $weight = $weightFn($item);
+            $count  = $countFn($item);
+            if ($filter->acceptsWithCount($item, $weight, $count)) {
+                $filteredItems[]   = $item;
+                $filteredWeights[] = $weight;
+                $filteredCounts[]  = $count;
             }
         }
 
-        if ($filtered === []) {
+        if ($filteredItems === []) {
             throw new AllItemsFilteredException('Cannot create a BoxPool: no items remain after filtering.');
         }
 
         return new self(
-            $filtered,
-            array_map($weightFn, $filtered),
-            array_map($countFn, $filtered),
+            $filteredItems,
+            $filteredWeights,
+            $filteredCounts,
             $randomizer,
             $selectorClass,
         );
@@ -120,6 +128,8 @@ final class BoxPool implements ExhaustiblePoolInterface
             $this->selector = $this->items !== [] ? ($this->selectorClass)::build($this->weights) : null;
         } else {
             // Count decremented but item still available: weights unchanged, reuse selector.
+            // Intermediate variable required: direct property index-assignment widens
+            // list<int> to non-empty-array<int,int> in PHPStan; array_values() re-narrows.
             $counts                 = $this->counts;
             $counts[$selectedIndex] = $newCount;
             $this->counts           = array_values($counts);
