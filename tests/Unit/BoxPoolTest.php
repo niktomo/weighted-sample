@@ -226,6 +226,80 @@ class BoxPoolTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
+    // FenwickTreeSelector — UpdatableSelectorInterface パス
+    // -------------------------------------------------------------------------
+
+    public function test_fenwick_selector_item_excluded_after_count_exhausted(): void
+    {
+        // Arrange — FenwickTree path: count=0 triggers update(index, 0) instead of splice+rebuild
+        $items = [
+            ['id' => 1, 'weight' => 10, 'count' => 1],
+            ['id' => 2, 'weight' => 90, 'count' => 3],
+        ];
+        $pool = BoxPool::of(
+            $items,
+            fn (array $item) => $item['weight'],
+            fn (array $item) => $item['count'],
+            selectorClass: \WeightedSample\Selector\FenwickTreeSelector::class,
+            randomizer: $this->fixedRandomizer(0),
+        );
+
+        // Act
+        $first  = $pool->draw()['id']; // id=1, count=0 → excluded via update(0, 0)
+        $second = $pool->draw()['id']; // only id=2 remains
+        $third  = $pool->draw()['id'];
+        $fourth = $pool->draw()['id'];
+
+        // Assert
+        $this->assertSame(1, $first, 'FenwickTree: 1回目: count=1 のアイテムが引かれること');
+        $this->assertSame(2, $second, 'FenwickTree: 2回目: count=0 になったアイテムは除外され id=2 が引かれること');
+        $this->assertSame(2, $third, 'FenwickTree: 3回目: id=2 が引かれること');
+        $this->assertSame(2, $fourth, 'FenwickTree: 4回目: id=2 が引かれること');
+    }
+
+    public function test_fenwick_selector_is_empty_after_all_counts_exhausted(): void
+    {
+        // Arrange
+        $items = [
+            ['id' => 1, 'weight' => 10, 'count' => 2],
+            ['id' => 2, 'weight' => 90, 'count' => 1],
+        ];
+        $pool = BoxPool::of(
+            $items,
+            fn (array $item) => $item['weight'],
+            fn (array $item) => $item['count'],
+            selectorClass: \WeightedSample\Selector\FenwickTreeSelector::class,
+            randomizer: $this->fixedRandomizer(0),
+        );
+
+        // Act
+        $pool->draw(); // id=1, count=1
+        $pool->draw(); // id=1, count=0 → excluded
+        $pool->draw(); // id=2, count=0 → excluded
+
+        // Assert
+        $this->assertTrue($pool->isEmpty(), 'FenwickTree: 全 count を消費した後 isEmpty() が true になること');
+    }
+
+    public function test_fenwick_selector_throws_on_empty_pool(): void
+    {
+        // Arrange
+        $pool = BoxPool::of(
+            [['id' => 1, 'weight' => 10, 'count' => 1]],
+            fn (array $item) => $item['weight'],
+            fn (array $item) => $item['count'],
+            selectorClass: \WeightedSample\Selector\FenwickTreeSelector::class,
+        );
+        $pool->draw();
+
+        // Assert
+        $this->expectException(\WeightedSample\Exception\EmptyPoolException::class);
+
+        // Act
+        $pool->draw();
+    }
+
+    // -------------------------------------------------------------------------
     // -------------------------------------------------------------------------
     // iterable サポート
     // -------------------------------------------------------------------------

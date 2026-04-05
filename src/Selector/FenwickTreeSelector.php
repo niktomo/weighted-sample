@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace WeightedSample\Selector;
 
+use InvalidArgumentException;
+use OverflowException;
 use WeightedSample\Randomizer\RandomizerInterface;
 
 /**
@@ -50,7 +52,7 @@ final class FenwickTreeSelector implements UpdatableSelectorInterface
         $size = count($weights);
 
         if ($size === 0) {
-            throw new \InvalidArgumentException('weights must not be empty.');
+            throw new InvalidArgumentException('weights must not be empty.');
         }
 
         $this->size  = $size;
@@ -58,7 +60,10 @@ final class FenwickTreeSelector implements UpdatableSelectorInterface
 
         foreach ($weights as $weight) {
             if ($weight <= 0) {
-                throw new \InvalidArgumentException("Each weight must be a positive integer, {$weight} given.");
+                throw new InvalidArgumentException("Each weight must be a positive integer, {$weight} given.");
+            }
+            if ($this->total > \PHP_INT_MAX - $weight) {
+                throw new OverflowException('Total weight exceeds PHP_INT_MAX.');
             }
             $this->total += $weight;
         }

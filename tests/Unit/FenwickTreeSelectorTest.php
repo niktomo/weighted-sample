@@ -67,6 +67,16 @@ class FenwickTreeSelectorTest extends TestCase
         ];
     }
 
+    public function test_build_throws_on_overflow(): void
+    {
+        // Arrange — 2 つの重みの合計が PHP_INT_MAX を超える
+        $half = intdiv(\PHP_INT_MAX, 2) + 1;
+
+        // Act & Assert
+        $this->expectException(\OverflowException::class);
+        FenwickTreeSelector::build([$half, $half]);
+    }
+
     // -------------------------------------------------------------------------
     // pick() — 基本動作
     // -------------------------------------------------------------------------
@@ -131,6 +141,46 @@ class FenwickTreeSelectorTest extends TestCase
         $this->assertArrayHasKey(0, $seen, 'weight=1 のアイテム(index 0)が 10000 回中に少なくとも 1 回出ること');
         $this->assertArrayHasKey(1, $seen, 'weight=9 のアイテム(index 1)が 10000 回中に少なくとも 1 回出ること');
         $this->assertArrayHasKey(2, $seen, 'weight=90 のアイテム(index 2)が 10000 回中に少なくとも 1 回出ること');
+    }
+
+    public function test_pick_distribution_matches_expected_proportions(): void
+    {
+        // Arrange — 重み [1, 9, 90] で 100000 回。期待値: 1%, 9%, 90%
+        $selector   = FenwickTreeSelector::build([1, 9, 90]);
+        $randomizer = new SeededRandomizer(42);
+        $counts     = [0, 0, 0];
+        $draws      = 100_000;
+
+        // Act
+        for ($i = 0; $i < $draws; $i++) {
+            $counts[$selector->pick($randomizer)]++;
+        }
+
+        // Assert — 3σ ≈ 0.3% なので delta=0.5% は保守的に十分安全
+        $this->assertEqualsWithDelta(1.0, $counts[0] / $draws * 100, 0.5, 'index 0 (weight=1) の出現率が 1% ±0.5% の範囲内であること');
+        $this->assertEqualsWithDelta(9.0, $counts[1] / $draws * 100, 0.5, 'index 1 (weight=9) の出現率が 9% ±0.5% の範囲内であること');
+        $this->assertEqualsWithDelta(90.0, $counts[2] / $draws * 100, 0.5, 'index 2 (weight=90) の出現率が 90% ±0.5% の範囲内であること');
+    }
+
+    public function test_pick_distribution_after_update_matches_expected_proportions(): void
+    {
+        // Arrange — update(0, 0) で index 0 を除外後、残り [30, 70] の分布を確認
+        $selector = FenwickTreeSelector::build([30, 30, 70]);
+        $selector->update(0, 0); // index 0 除外 → 実質 [0, 30, 70], total=100
+
+        $randomizer = new SeededRandomizer(42);
+        $counts     = [0, 0, 0];
+        $draws      = 100_000;
+
+        // Act
+        for ($i = 0; $i < $draws; $i++) {
+            $counts[$selector->pick($randomizer)]++;
+        }
+
+        // Assert — index 0 は出ない、index 1 は 30%, index 2 は 70%
+        $this->assertSame(0, $counts[0], 'update(0, 0) 後に index 0 が一度も選ばれないこと');
+        $this->assertEqualsWithDelta(30.0, $counts[1] / $draws * 100, 0.5, 'index 1 の出現率が 30% ±0.5% の範囲内であること');
+        $this->assertEqualsWithDelta(70.0, $counts[2] / $draws * 100, 0.5, 'index 2 の出現率が 70% ±0.5% の範囲内であること');
     }
 
     // -------------------------------------------------------------------------

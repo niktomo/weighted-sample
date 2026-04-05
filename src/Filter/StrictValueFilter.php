@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace WeightedSample\Filter;
 
+use InvalidArgumentException;
+
 /**
  * Throws InvalidArgumentException for items with weight ≤ 0.
  * When used with BoxPool, also throws for items with count ≤ 0.
@@ -16,7 +18,7 @@ final class StrictValueFilter implements CountedItemFilterInterface
     public function accepts(mixed $item, int $weight): bool
     {
         if ($weight <= 0) {
-            throw new \InvalidArgumentException("Each item's weight must be a positive integer, {$weight} given.");
+            throw new InvalidArgumentException("Each item's weight must be a positive integer, {$weight} given.");
         }
 
         return true;
@@ -27,7 +29,7 @@ final class StrictValueFilter implements CountedItemFilterInterface
         $this->accepts($item, $weight);
 
         if ($count <= 0) {
-            throw new \InvalidArgumentException("Each item's count must be a positive integer, {$count} given.");
+            throw new InvalidArgumentException("Each item's count must be a positive integer, {$count} given.");
         }
 
         return true;

@@ -1,7 +1,26 @@
 services:
-  benchmark:
-    image: php:8.4-cli
+  # Run tests with xdebug coverage — outputs coverage/ directory
+  test:
+    build: .
     volumes:
       - .:/app
     working_dir: /app
-    command: php benchmark/run.php
+    command: vendor/bin/phpunit --coverage-html coverage/
+    environment:
+      XDEBUG_MODE: coverage
+
+  # Run phpmd static analysis
+  phpmd:
+    build: .
+    volumes:
+      - .:/app
+    working_dir: /app
+    command: vendor/bin/phpmd src/ text phpmd.xml
+
+  # Run benchmarks
+  benchmark:
+    build: .
+    volumes:
+      - .:/app
+    working_dir: /app
+    command: php benchmark/bench.php

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-04-05
+
+### Added
+- `FenwickTreeSelector` — Fenwick tree (Binary Indexed Tree) selector with O(n) build, O(log n) pick, and **O(log n) update**
+- `UpdatableSelectorInterface` — extends `SelectorInterface` with `update(int $index, int $newWeight): void` and `totalWeight(): int`; implemented by `FenwickTreeSelector`
+- `DestructivePool` and `BoxPool` now detect `UpdatableSelectorInterface` and use `update(index, 0)` instead of full selector rebuild — reduces total draw-all cost from O(n²) to O(n log n) when `FenwickTreeSelector` is used
+- `FenwickTreeSelector::build()` validates empty weights and non-positive weights (matching `PrefixSumSelector` and `AliasTableSelector` behavior)
+- `FenwickTreeSelector::build()` overflow guard (`runningTotal > PHP_INT_MAX - weight`) throws `\OverflowException` before integer overflow can occur
+
+### Changed
+- **BREAKING** `$weightFn` parameter renamed to `$weightExtractor` in `WeightedPool::of()`, `DestructivePool::of()`, and `BoxPool::of()`
+- **BREAKING** `$countFn` parameter renamed to `$countExtractor` in `BoxPool::of()`
+  - Named argument callers must update: `weightFn:` → `weightExtractor:`, `countFn:` → `countExtractor:`
+
 ## [1.0.0] - 2026-03-31
 
 ### Added

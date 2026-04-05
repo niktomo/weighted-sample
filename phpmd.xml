@@ -1,0 +1,61 @@
+<?xml version="1.0"?>
+<ruleset name="weighted-sample"
+         xmlns="http://pmd.sf.net/ruleset/1.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://pmd.sf.net/ruleset/1.0.0 http://pmd.sf.net/ruleset_xml_schema.xsd"
+         xsi:noNamespaceSchemaLocation="http://pmd.sf.net/ruleset_xml_schema.xsd">
+
+    <description>weighted-sample phpmd ruleset</description>
+
+    <rule ref="rulesets/cleancode.xml">
+        <!--
+            Static factory methods (of(), build()) are an intentional named-constructor pattern.
+            Prohibiting StaticAccess would require removing all static factories,
+            which contradicts the library's design.
+        -->
+        <exclude name="StaticAccess"/>
+        <!--
+            Else expressions in binary search and Vose's algorithm loops are semantically
+            necessary and improve readability. Removing them would produce less clear code.
+        -->
+        <exclude name="ElseExpression"/>
+    </rule>
+
+    <rule ref="rulesets/codesize.xml">
+        <!--
+            AliasTableSelector::__construct implements Vose's alias method in a single pass.
+            The inherent branching of the algorithm brings cyclomatic complexity to ~11.
+            Excluded here and re-added below with a raised threshold.
+        -->
+        <exclude name="CyclomaticComplexity"/>
+    </rule>
+
+    <!--
+        Raise threshold to 12: Vose's algorithm legitimately requires more branches
+        than a typical method without being genuinely problematic.
+    -->
+    <rule ref="rulesets/codesize.xml/CyclomaticComplexity">
+        <properties>
+            <property name="reportLevel" value="12"/>
+        </properties>
+    </rule>
+
+    <rule ref="rulesets/design.xml"/>
+
+    <rule ref="rulesets/naming.xml">
+        <!--
+            Single/double-character variables ($i, $r, $n, $t, $g, $b) are idiomatic in
+            algorithm code (Fenwick tree descent, prefix sum loops, Vose's algorithm).
+            Enforcing a 3-char minimum would reduce readability in these contexts.
+        -->
+        <exclude name="ShortVariable"/>
+        <!--
+            'of()' is an intentional named constructor — the short name is part of the API
+            and follows common PHP factory method conventions.
+        -->
+        <exclude name="ShortMethodName"/>
+    </rule>
+
+    <rule ref="rulesets/unusedcode.xml"/>
+
+</ruleset>

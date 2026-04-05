@@ -40,6 +40,17 @@ class AliasTableSelectorTest extends TestCase
         ];
     }
 
+    public function test_build_throws_on_overflow(): void
+    {
+        // Arrange — n=3, W = 3 × bigWeight ≈ PHP_INT_MAX → n×W > PHP_INT_MAX
+        // intdiv(PHP_INT_MAX, 3) × 3 ≈ PHP_INT_MAX, so itemCount(3) >= intdiv(PHP_INT_MAX, total)(1) → throws
+        $bigWeight = intdiv(\PHP_INT_MAX, 3);
+
+        // Act & Assert
+        $this->expectException(\OverflowException::class);
+        AliasTableSelector::build([$bigWeight, $bigWeight, $bigWeight]);
+    }
+
     public function test_implements_selector_interface(): void
     {
         // Arrange & Act
@@ -136,6 +147,26 @@ class AliasTableSelectorTest extends TestCase
         $this->assertArrayHasKey(0, $seen, 'weight=1 のアイテム(index 0)が 10000 回中に少なくとも 1 回出ること');
         $this->assertArrayHasKey(1, $seen, 'weight=9 のアイテム(index 1)が 10000 回中に少なくとも 1 回出ること');
         $this->assertArrayHasKey(2, $seen, 'weight=90 のアイテム(index 2)が 10000 回中に少なくとも 1 回出ること');
+    }
+
+    public function test_pick_distribution_matches_expected_proportions(): void
+    {
+        // Arrange — 重み [1, 9, 90] で 100000 回。期待値: 1%, 9%, 90%
+        // 3σ ≈ 0.3% なので delta=0.5% は保守的に十分安全
+        $selector   = AliasTableSelector::build([1, 9, 90]);
+        $randomizer = new SeededRandomizer(42);
+        $counts     = [0, 0, 0];
+        $draws      = 100_000;
+
+        // Act
+        for ($i = 0; $i < $draws; $i++) {
+            $counts[$selector->pick($randomizer)]++;
+        }
+
+        // Assert
+        $this->assertEqualsWithDelta(1.0, $counts[0] / $draws * 100, 0.5, 'index 0 (weight=1) の出現率が 1% ±0.5% の範囲内であること');
+        $this->assertEqualsWithDelta(9.0, $counts[1] / $draws * 100, 0.5, 'index 1 (weight=9) の出現率が 9% ±0.5% の範囲内であること');
+        $this->assertEqualsWithDelta(90.0, $counts[2] / $draws * 100, 0.5, 'index 2 (weight=90) の出現率が 90% ±0.5% の範囲内であること');
     }
 
     /**

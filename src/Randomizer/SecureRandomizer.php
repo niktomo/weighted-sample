@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace WeightedSample\Randomizer;
 
+use Random\Engine\Secure;
+use Random\Randomizer;
+
 /**
  * Cryptographically secure randomizer backed by \Random\Engine\Secure.
  *
@@ -12,11 +15,11 @@ namespace WeightedSample\Randomizer;
  */
 final readonly class SecureRandomizer implements RandomizerInterface
 {
-    private \Random\Randomizer $randomizer;
+    private Randomizer $randomizer;
 
     public function __construct()
     {
-        $this->randomizer = new \Random\Randomizer(new \Random\Engine\Secure());
+        $this->randomizer = new Randomizer(new Secure());
     }
 
     public function next(int $max): int

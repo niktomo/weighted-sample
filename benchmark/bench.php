@@ -5,16 +5,13 @@ declare(strict_types=1);
 /**
  * Benchmark: build time, draw time, and total throughput for all pool types.
  *
- * Measured dimensions:
- *   - Build only  : time to construct a pool (Pool::of()) without any draws
- *   - Draw only   : time to call draw() on an already-built pool
- *   - Total       : build + all draws combined (realistic end-to-end scenario)
- *
  * Sections:
  *   1. WeightedPool  — immutable pool; build once, draw repeatedly
  *   2. DestructivePool — stateful; each trial rebuilds and draws until empty
  *   3. BoxPool       — stateful; each trial rebuilds and draws until stock runs out
- *   4. Selector comparison — PrefixSum O(log n) vs AliasTable O(1) across item counts
+ *   4. Selector pick throughput — PrefixSum / Alias / Fenwick across item counts
+ *   5. DestructivePool scaling  — PrefixSum O(n²) vs FenwickTree O(n log n)
+ *   6. Accuracy                 — max deviation from expected across all selectors
  */
 
 require_once __DIR__ . '/../vendor/autoload.php';
@@ -24,33 +21,28 @@ use WeightedSample\Pool\DestructivePool;
 use WeightedSample\Pool\WeightedPool;
 use WeightedSample\Randomizer\SeededRandomizer;
 use WeightedSample\Selector\AliasTableSelector;
+use WeightedSample\Selector\FenwickTreeSelector;
 use WeightedSample\Selector\PrefixSumSelector;
 
 // ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
 
-/** Trials for build-only measurement (each trial = one Pool::of() call). */
-const BUILD_TRIALS = 10_000;
-
-/** Draws per trial for WeightedPool draw-only measurement. */
+const BUILD_TRIALS           = 10_000;
 const WEIGHTED_DRAWS_PER_TRIAL = 100_000;
-
-/** Trials for DestructivePool / BoxPool total measurement. */
-const POOL_TRIALS = 10_000;
-
-/** Item count for selector comparison benchmark. */
-const SELECTOR_PICKS = 1_000_000;
+const POOL_TRIALS            = 10_000;
+const SELECTOR_PICKS         = 1_000_000;
+const ACCURACY_DRAWS_PER_ITEM = 500;
 
 // ---------------------------------------------------------------------------
-// Items used across all sections
+// Items
 // ---------------------------------------------------------------------------
 
 /** @var list<array{name: string, weight: int}> */
 $weightedItems = [
-    ['name' => 'SSR',    'weight' => 1],
-    ['name' => 'SR',     'weight' => 9],
-    ['name' => 'R',      'weight' => 90],
+    ['name' => 'SSR', 'weight' => 1],
+    ['name' => 'SR',  'weight' => 9],
+    ['name' => 'R',   'weight' => 90],
 ];
 
 /** @var list<array{name: string, weight: int}> */
@@ -68,46 +60,30 @@ $boxItems = [
 ];
 
 // ---------------------------------------------------------------------------
-// Helper: measure execution time of a callable in milliseconds
+// Helpers
 // ---------------------------------------------------------------------------
 
-/**
- * @param callable(): void $callable
- */
+/** @param callable(): void $callable */
 function measureMs(callable $callable): float
 {
     $start = hrtime(true);
     $callable();
-
     return (hrtime(true) - $start) / 1_000_000;
 }
 
-/**
- * @param callable(): void $callable
- */
-function measureMsPerOp(callable $callable, int $operations): float
-{
-    return measureMs($callable) / $operations;
-}
-
-// ---------------------------------------------------------------------------
-// Header
-// ---------------------------------------------------------------------------
-
 function printSectionHeader(string $title): void
 {
-    echo "\n";
-    echo str_repeat('=', 72) . "\n";
+    echo "\n" . str_repeat('=', 72) . "\n";
     echo "  {$title}\n";
     echo str_repeat('=', 72) . "\n";
-    printf("%-16s %16s %16s %16s\n", 'Metric', 'Total (ms)', 'Per-op (µs)', 'Ops');
-    echo str_repeat('-', 68) . "\n";
+    printf("%-18s %14s %14s %14s\n", 'Metric', 'Total (ms)', 'Per-op (µs)', 'Ops');
+    echo str_repeat('-', 64) . "\n";
 }
 
 function printRow(string $label, float $totalMs, int $ops): void
 {
-    $perOpUs = $totalMs / $ops * 1_000;
-    printf("%-16s %16.3f %16.3f %16d\n", $label, $totalMs, $perOpUs, $ops);
+    $perOpUs = $ops > 0 ? $totalMs / $ops * 1_000 : 0.0;
+    printf("%-18s %14.3f %14.3f %14d\n", $label, $totalMs, $perOpUs, $ops);
 }
 
 // ===========================================================================
@@ -116,205 +92,187 @@ function printRow(string $label, float $totalMs, int $ops): void
 
 printSectionHeader('WeightedPool (SSR=1%, SR=9%, R=90%)');
 
-// --- Build only ---
-$buildMs = measureMs(function () use ($weightedItems): void {
+$ms = measureMs(function () use ($weightedItems): void {
     for ($i = 0; $i < BUILD_TRIALS; $i++) {
-        WeightedPool::of(
-            $weightedItems,
-            fn (array $item): int => $item['weight'],
-            randomizer: new SeededRandomizer(42),
-        );
+        WeightedPool::of($weightedItems, fn (array $item): int => $item['weight'], randomizer: new SeededRandomizer(42));
     }
 });
-printRow('Build only', $buildMs, BUILD_TRIALS);
+printRow('Build only', $ms, BUILD_TRIALS);
 
-// --- Draw only (PrefixSum) ---
-$prebuiltPrefix = WeightedPool::of(
-    $weightedItems,
-    fn (array $item): int => $item['weight'],
-    randomizer: new SeededRandomizer(42),
-);
-$drawPrefixMs = measureMs(function () use ($prebuiltPrefix): void {
-    for ($i = 0; $i < WEIGHTED_DRAWS_PER_TRIAL; $i++) {
-        $prebuiltPrefix->draw();
-    }
-});
-printRow('Draw (PrefixSum)', $drawPrefixMs, WEIGHTED_DRAWS_PER_TRIAL);
-
-// --- Draw only (Alias) ---
-$prebuiltAlias = WeightedPool::of(
-    $weightedItems,
-    fn (array $item): int => $item['weight'],
-    selectorClass: AliasTableSelector::class,
-    randomizer: new SeededRandomizer(42),
-);
-$drawAliasMs = measureMs(function () use ($prebuiltAlias): void {
-    for ($i = 0; $i < WEIGHTED_DRAWS_PER_TRIAL; $i++) {
-        $prebuiltAlias->draw();
-    }
-});
-printRow('Draw (Alias)', $drawAliasMs, WEIGHTED_DRAWS_PER_TRIAL);
-
-// --- Total: 1 build + N draws (PrefixSum) ---
-$totalPrefixMs = measureMs(function () use ($weightedItems): void {
-    for ($i = 0; $i < BUILD_TRIALS; $i++) {
-        $pool = WeightedPool::of(
-            $weightedItems,
-            fn (array $item): int => $item['weight'],
-            randomizer: new SeededRandomizer(42),
-        );
-        for ($draw = 0; $draw < 100; $draw++) {
-            $pool->draw();
-        }
-    }
-});
-printRow('Total (B+100D)', $totalPrefixMs, BUILD_TRIALS);
-
-// ===========================================================================
-// Section 2: DestructivePool
-// ===========================================================================
-
-printSectionHeader('DestructivePool (Gold=10%, Silver=30%, Bronze=60%)');
-
-/** Number of draws per pool until empty. */
-$destructiveDrawsPerPool = count($destructiveItems);
-
-// --- Build only ---
-$buildMs = measureMs(function () use ($destructiveItems): void {
-    for ($i = 0; $i < BUILD_TRIALS; $i++) {
-        DestructivePool::of(
-            $destructiveItems,
-            fn (array $item): int => $item['weight'],
-            randomizer: new SeededRandomizer(42),
-        );
-    }
-});
-printRow('Build only', $buildMs, BUILD_TRIALS);
-
-// --- Draw only (from pre-built pool, draw all) ---
-$drawTotalMs = 0.0;
-for ($trial = 0; $trial < POOL_TRIALS; $trial++) {
-    $pool = DestructivePool::of(
-        $destructiveItems,
-        fn (array $item): int => $item['weight'],
-        randomizer: new SeededRandomizer($trial),
-    );
-    $drawTotalMs += measureMs(function () use ($pool, $destructiveDrawsPerPool): void {
-        for ($draw = 0; $draw < $destructiveDrawsPerPool; $draw++) {
-            $pool->draw();
-        }
+foreach (['PrefixSum' => PrefixSumSelector::class, 'Alias' => AliasTableSelector::class] as $name => $cls) {
+    $pool = WeightedPool::of($weightedItems, fn (array $item): int => $item['weight'], selectorClass: $cls, randomizer: new SeededRandomizer(42));
+    $ms   = measureMs(function () use ($pool): void {
+        for ($i = 0; $i < WEIGHTED_DRAWS_PER_TRIAL; $i++) { $pool->draw(); }
     });
+    printRow("Draw ({$name})", $ms, WEIGHTED_DRAWS_PER_TRIAL);
 }
-printRow('Draw only (all)', $drawTotalMs, POOL_TRIALS * $destructiveDrawsPerPool);
 
-// --- Total: build + draw all (per trial) ---
-$totalMs = measureMs(function () use ($destructiveItems, $destructiveDrawsPerPool): void {
-    for ($trial = 0; $trial < POOL_TRIALS; $trial++) {
-        $pool = DestructivePool::of(
-            $destructiveItems,
-            fn (array $item): int => $item['weight'],
-            randomizer: new SeededRandomizer($trial),
-        );
-        while (! $pool->isEmpty()) {
-            $pool->draw();
-        }
+$ms = measureMs(function () use ($weightedItems): void {
+    for ($i = 0; $i < BUILD_TRIALS; $i++) {
+        $pool = WeightedPool::of($weightedItems, fn (array $item): int => $item['weight'], randomizer: new SeededRandomizer(42));
+        for ($d = 0; $d < 100; $d++) { $pool->draw(); }
     }
 });
-printRow('Total (B+DrawAll)', $totalMs, POOL_TRIALS);
+printRow('Total (B+100D)', $ms, BUILD_TRIALS);
+
+// ===========================================================================
+// Section 2: DestructivePool (small pool, 3 items)
+// ===========================================================================
+
+$destructiveN = count($destructiveItems);
+printSectionHeader("DestructivePool (n={$destructiveN}: Gold/Silver/Bronze)");
+
+$ms = measureMs(function () use ($destructiveItems): void {
+    for ($i = 0; $i < BUILD_TRIALS; $i++) {
+        DestructivePool::of($destructiveItems, fn (array $item): int => $item['weight'], randomizer: new SeededRandomizer(42));
+    }
+});
+printRow('Build only', $ms, BUILD_TRIALS);
+
+foreach (['PrefixSum' => PrefixSumSelector::class, 'Fenwick' => FenwickTreeSelector::class] as $name => $cls) {
+    $drawTotal = 0.0;
+    for ($trial = 0; $trial < POOL_TRIALS; $trial++) {
+        $pool = DestructivePool::of($destructiveItems, fn (array $item): int => $item['weight'], selectorClass: $cls, randomizer: new SeededRandomizer($trial));
+        $drawTotal += measureMs(function () use ($pool, $destructiveN): void {
+            for ($d = 0; $d < $destructiveN; $d++) { $pool->draw(); }
+        });
+    }
+    printRow("Draw all ({$name})", $drawTotal, POOL_TRIALS * $destructiveN);
+}
+
+$ms = measureMs(function () use ($destructiveItems): void {
+    for ($trial = 0; $trial < POOL_TRIALS; $trial++) {
+        $pool = DestructivePool::of($destructiveItems, fn (array $item): int => $item['weight'], randomizer: new SeededRandomizer($trial));
+        while (! $pool->isEmpty()) { $pool->draw(); }
+    }
+});
+printRow('Total (B+DrawAll)', $ms, POOL_TRIALS);
 
 // ===========================================================================
 // Section 3: BoxPool
 // ===========================================================================
 
-/** @var int $boxDrawsPerPool Total stock count per box. */
-$boxDrawsPerPool = array_sum(array_column($boxItems, 'stock'));
-
+$boxDrawsPerPool = (int) array_sum(array_column($boxItems, 'stock'));
 printSectionHeader("BoxPool (Gold×1, Silver×3, Bronze×6 = {$boxDrawsPerPool} draws/box)");
 
-// --- Build only ---
-$buildMs = measureMs(function () use ($boxItems): void {
+$ms = measureMs(function () use ($boxItems): void {
     for ($i = 0; $i < BUILD_TRIALS; $i++) {
-        BoxPool::of(
-            $boxItems,
-            fn (array $item): int => $item['weight'],
-            fn (array $item): int => $item['stock'],
-            randomizer: new SeededRandomizer(42),
-        );
+        BoxPool::of($boxItems, fn (array $item): int => $item['weight'], fn (array $item): int => $item['stock'], randomizer: new SeededRandomizer(42));
     }
 });
-printRow('Build only', $buildMs, BUILD_TRIALS);
+printRow('Build only', $ms, BUILD_TRIALS);
 
-// --- Draw only (from pre-built pool, draw all) ---
-$drawTotalMs = 0.0;
-for ($trial = 0; $trial < POOL_TRIALS; $trial++) {
-    $pool = BoxPool::of(
-        $boxItems,
-        fn (array $item): int => $item['weight'],
-        fn (array $item): int => $item['stock'],
-        randomizer: new SeededRandomizer($trial),
-    );
-    $drawTotalMs += measureMs(function () use ($pool): void {
-        while (! $pool->isEmpty()) {
-            $pool->draw();
-        }
-    });
-}
-printRow('Draw only (all)', $drawTotalMs, POOL_TRIALS * $boxDrawsPerPool);
-
-// --- Total: build + draw all (per trial) ---
-$totalMs = measureMs(function () use ($boxItems): void {
+foreach (['PrefixSum' => PrefixSumSelector::class, 'Fenwick' => FenwickTreeSelector::class] as $name => $cls) {
+    $drawTotal = 0.0;
     for ($trial = 0; $trial < POOL_TRIALS; $trial++) {
-        $pool = BoxPool::of(
-            $boxItems,
-            fn (array $item): int => $item['weight'],
-            fn (array $item): int => $item['stock'],
-            randomizer: new SeededRandomizer($trial),
-        );
-        while (! $pool->isEmpty()) {
-            $pool->draw();
-        }
+        $pool = BoxPool::of($boxItems, fn (array $item): int => $item['weight'], fn (array $item): int => $item['stock'], selectorClass: $cls, randomizer: new SeededRandomizer($trial));
+        $drawTotal += measureMs(function () use ($pool): void {
+            while (! $pool->isEmpty()) { $pool->draw(); }
+        });
     }
-});
-printRow('Total (B+DrawAll)', $totalMs, POOL_TRIALS);
-
-// ===========================================================================
-// Section 4: Selector pick performance vs item count
-// ===========================================================================
-
-echo "\n";
-echo str_repeat('=', 72) . "\n";
-echo '  Selector pick throughput vs item count (' . SELECTOR_PICKS . " picks each)\n";
-echo str_repeat('=', 72) . "\n";
-printf("%-10s %22s %22s %10s\n", 'Items', 'PrefixSum O(log n) µs', 'Alias O(1) µs', 'Ratio A/P');
-echo str_repeat('-', 68) . "\n";
-
-foreach ([3, 10, 30, 50, 100, 200, 500, 1000] as $itemCount) {
-    $weights = range(1, $itemCount);
-
-    $prefixSelector = PrefixSumSelector::build($weights);
-    $aliasSelector  = AliasTableSelector::build($weights);
-
-    $prefixRandomizer = new SeededRandomizer(42);
-    $prefixMs         = measureMs(function () use ($prefixSelector, $prefixRandomizer): void {
-        for ($i = 0; $i < SELECTOR_PICKS; $i++) {
-            $prefixSelector->pick($prefixRandomizer);
-        }
-    });
-
-    $aliasRandomizer = new SeededRandomizer(42);
-    $aliasMs         = measureMs(function () use ($aliasSelector, $aliasRandomizer): void {
-        for ($i = 0; $i < SELECTOR_PICKS; $i++) {
-            $aliasSelector->pick($aliasRandomizer);
-        }
-    });
-
-    $prefixUsPerOp = $prefixMs / SELECTOR_PICKS * 1_000;
-    $aliasUsPerOp  = $aliasMs / SELECTOR_PICKS * 1_000;
-    $ratio         = $aliasMs > 0 ? $aliasMs / $prefixMs : 0.0;
-
-    printf("%-10d %22.4f %22.4f %10.3fx\n", $itemCount, $prefixUsPerOp, $aliasUsPerOp, $ratio);
+    printRow("Draw all ({$name})", $drawTotal, POOL_TRIALS * $boxDrawsPerPool);
 }
 
-echo str_repeat('-', 68) . "\n";
-echo "Ratio < 1.0 means Alias is faster; > 1.0 means PrefixSum is faster.\n";
+// ===========================================================================
+// Section 4: Selector pick throughput vs item count
+// ===========================================================================
+
+echo "\n" . str_repeat('=', 80) . "\n";
+echo '  Selector pick throughput vs item count (' . SELECTOR_PICKS . " picks each)\n";
+echo str_repeat('=', 80) . "\n";
+printf("%-8s %20s %20s %20s\n", 'Items', 'PrefixSum O(log n)', 'Fenwick O(log n)', 'Alias O(1)');
+echo str_repeat('-', 72) . "\n";
+
+foreach ([3, 10, 30, 50, 100, 200, 500, 1000] as $n) {
+    $weights = range(1, $n);
+    $results = [];
+    foreach ([
+        'prefix'  => PrefixSumSelector::build($weights),
+        'fenwick' => FenwickTreeSelector::build($weights),
+        'alias'   => AliasTableSelector::build($weights),
+    ] as $key => $sel) {
+        $rng = new SeededRandomizer(42);
+        $ms  = measureMs(function () use ($sel, $rng): void {
+            for ($i = 0; $i < SELECTOR_PICKS; $i++) { $sel->pick($rng); }
+        });
+        $results[$key] = $ms / SELECTOR_PICKS * 1_000;
+    }
+    printf("%-8d %17.4f µs %17.4f µs %17.4f µs\n", $n, $results['prefix'], $results['fenwick'], $results['alias']);
+}
+
+echo str_repeat('-', 72) . "\n";
+
+// ===========================================================================
+// Section 5: DestructivePool scaling — PrefixSum O(n²) vs FenwickTree O(n log n)
+// ===========================================================================
+
+echo "\n" . str_repeat('=', 80) . "\n";
+echo "  DestructivePool scaling: draw-all time (µs/item) vs N\n";
+echo "  PrefixSum = O(n²) total,  FenwickTree = O(n log n) total\n";
+echo str_repeat('=', 80) . "\n";
+printf("%-8s %22s %22s %10s\n", 'N', 'PrefixSum (µs/item)', 'Fenwick (µs/item)', 'Speedup');
+echo str_repeat('-', 66) . "\n";
+
+$scalingTrials = 200;
+foreach ([10, 50, 100, 250, 500, 1000, 2500, 5000] as $n) {
+    $items = array_map(fn (int $i): array => ['w' => $i], range(1, $n));
+
+    $msPrefix = measureMs(function () use ($items, $n, $scalingTrials): void {
+        for ($t = 0; $t < $scalingTrials; $t++) {
+            $pool = DestructivePool::of($items, fn (array $item): int => $item['w'], selectorClass: PrefixSumSelector::class, randomizer: new SeededRandomizer($t));
+            while (! $pool->isEmpty()) { $pool->draw(); }
+        }
+    });
+
+    $msFenwick = measureMs(function () use ($items, $n, $scalingTrials): void {
+        for ($t = 0; $t < $scalingTrials; $t++) {
+            $pool = DestructivePool::of($items, fn (array $item): int => $item['w'], selectorClass: FenwickTreeSelector::class, randomizer: new SeededRandomizer($t));
+            while (! $pool->isEmpty()) { $pool->draw(); }
+        }
+    });
+
+    $totalDraws    = $scalingTrials * $n;
+    $prefixUsItem  = $msPrefix  / $totalDraws * 1_000;
+    $fenwickUsItem = $msFenwick / $totalDraws * 1_000;
+    $speedup       = $msFenwick > 0 ? $msPrefix / $msFenwick : 0.0;
+
+    printf("%-8d %19.4f µs %19.4f µs %9.2fx\n", $n, $prefixUsItem, $fenwickUsItem, $speedup);
+}
+
+echo str_repeat('-', 66) . "\n";
+echo "Speedup > 1.0 means FenwickTree is faster.\n";
+
+// ===========================================================================
+// Section 6: Accuracy — max deviation from expected (equal weights)
+// ===========================================================================
+
+echo "\n" . str_repeat('=', 80) . "\n";
+echo "  Accuracy: max absolute deviation from expected (equal weights, " . ACCURACY_DRAWS_PER_ITEM . " draws/item)\n";
+echo str_repeat('=', 80) . "\n";
+printf("%-8s %22s %22s %22s\n", 'N', 'PrefixSum (%)', 'Fenwick (%)', 'Alias (%)');
+echo str_repeat('-', 78) . "\n";
+
+foreach ([10, 50, 100, 500, 1000] as $n) {
+    $weights = array_fill(0, $n, 1);
+    $draws   = $n * ACCURACY_DRAWS_PER_ITEM;
+    $exp     = 100.0 / $n;
+    $row     = [];
+
+    foreach ([
+        'prefix'  => PrefixSumSelector::build($weights),
+        'fenwick' => FenwickTreeSelector::build($weights),
+        'alias'   => AliasTableSelector::build($weights),
+    ] as $key => $sel) {
+        $rng    = new SeededRandomizer(99);
+        $counts = array_fill(0, $n, 0);
+        for ($i = 0; $i < $draws; $i++) { $counts[$sel->pick($rng)]++; }
+        $maxDev = 0.0;
+        foreach ($counts as $c) { $maxDev = max($maxDev, abs($c / $draws * 100.0 - $exp)); }
+        $row[$key] = $maxDev;
+    }
+
+    printf("%-8d %19.6f %% %19.6f %% %19.6f %%\n", $n, $row['prefix'], $row['fenwick'], $row['alias']);
+}
+
+echo str_repeat('-', 78) . "\n";
 echo "\nDone.\n";

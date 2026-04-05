@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace WeightedSample\Randomizer;
 
+use Random\Engine\Mt19937;
+use Random\Randomizer;
+
 /**
  * Deterministic randomizer backed by \Random\Engine\Mt19937.
  *
@@ -14,11 +17,11 @@ namespace WeightedSample\Randomizer;
  */
 final readonly class SeededRandomizer implements RandomizerInterface
 {
-    private \Random\Randomizer $randomizer;
+    private Randomizer $randomizer;
 
     public function __construct(int $seed)
     {
-        $this->randomizer = new \Random\Randomizer(new \Random\Engine\Mt19937($seed));
+        $this->randomizer = new Randomizer(new Mt19937($seed));
     }
 
     public function next(int $max): int
