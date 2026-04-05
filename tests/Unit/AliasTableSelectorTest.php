@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace WeightedSample\Tests\Unit;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use WeightedSample\Randomizer\RandomizerInterface;
 use WeightedSample\Randomizer\SeededRandomizer;
@@ -12,6 +13,33 @@ use WeightedSample\Selector\SelectorInterface;
 
 class AliasTableSelectorTest extends TestCase
 {
+    public function test_build_throws_on_empty_weights(): void
+    {
+        // Arrange & Act & Assert
+        $this->expectException(\InvalidArgumentException::class);
+        AliasTableSelector::build([]);
+    }
+
+    /** @param list<int> $weights */
+    #[DataProvider('nonPositiveWeightProvider')]
+    public function test_build_throws_on_non_positive_weight(array $weights): void
+    {
+        // Arrange & Act & Assert
+        $this->expectException(\InvalidArgumentException::class);
+        AliasTableSelector::build($weights);
+    }
+
+    /** @return list<array{0: list<int>}> */
+    public static function nonPositiveWeightProvider(): array
+    {
+        return [
+            [[0, 10]],
+            [[-1, 10]],
+            [[0, 0]],
+            [[10, -5, 90]],
+        ];
+    }
+
     public function test_implements_selector_interface(): void
     {
         // Arrange & Act
@@ -49,7 +77,9 @@ class AliasTableSelectorTest extends TestCase
 
     public function test_pick_returns_item_index_when_coin_is_below_threshold(): void
     {
-        // Arrange — weights=[10, 90]: n=2, W=100, n×W=200, threshold=[20, 100], alias=[1, 0]
+        // Arrange — weights=[10, 90]: n=2, W=100, n×W=200
+        //   prob[0]=n×w[0]=20 < W → small; prob[1]=n×w[1]=180 ≥ W → large
+        //   Vose's: threshold[0]=20, alias[0]=1; threshold[1]=W=100 (default, alias unused)
         // r=0 → column=intdiv(0,100)=0, coinValue=0%100=0. 0 < 20 → index 0
         $selector = AliasTableSelector::build([10, 90]);
 
@@ -62,7 +92,8 @@ class AliasTableSelectorTest extends TestCase
 
     public function test_pick_returns_alias_index_when_coin_exceeds_threshold(): void
     {
-        // Arrange — weights=[10, 90]: n=2, W=100, n×W=200, threshold=[20, 100], alias=[1, 0]
+        // Arrange — weights=[10, 90]: n=2, W=100, n×W=200
+        //   threshold[0]=20, alias[0]=1 (set by Vose's); threshold[1]=100 (default, alias unused)
         // r=20 → column=intdiv(20,100)=0, coinValue=20%100=20. 20 < 20? No → alias[0]=1
         $selector = AliasTableSelector::build([10, 90]);
 
@@ -76,9 +107,9 @@ class AliasTableSelectorTest extends TestCase
     public function test_all_items_reachable_with_extreme_weight_ratio(): void
     {
         // Arrange — 重み比 1:999999 の極端なケース
-        // threshold[0] は float 演算で 0 に近づく可能性があるが、クランプにより最低 1 が保証される
-        // クランプなし: threshold[0] = round(n*w[0]) = round(2) = 2 (この場合は安全だが、
-        // Vose ループで多段降格が起きるケースへの回帰防止として記録する)
+        //   整数演算: prob[0]=n×w[0]=2×1=2 < W → small。threshold[0]=2 (exact, no float bias)
+        //   旧 float 実装では round(n×w[0]/W × W)=round(0.000002×1000000)=2 と同値だが、
+        //   多段降格ケースでは float 誤差により threshold=0 になるリスクがあった。整数演算はクランプ不要。
         $selector = AliasTableSelector::build([1, 999999]);
 
         // r=0 → column=intdiv(0, 999999+1)=0, coinValue=0 < threshold[0](≥1) → index 0 が返ること

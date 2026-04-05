@@ -52,7 +52,7 @@ final readonly class PrefixSumIndex
         $high = count($this->prefixSums) - 1;
 
         while ($low < $high) {
-            $middle = ($low + $high) >> 1;
+            $middle = ($low + $high) >> 1;  // overflow-safe midpoint
             if ($this->prefixSums[$middle] <= $randomValue) {
                 $low = $middle + 1;
             } else {

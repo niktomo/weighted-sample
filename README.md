@@ -213,6 +213,11 @@ $pool = BoxPool::of(
 );
 ```
 
+**Note:** When `CompositeFilter` is used with `BoxPool`, inner filters that implement only
+`ItemFilterInterface` (not `CountedItemFilterInterface`) will have `acceptsWithCount()` fall back
+to `accepts()` — the stock count is ignored by those filters. If count-based exclusion is needed,
+each inner filter must implement `CountedItemFilterInterface`.
+
 ### Exception types
 
 | Exception | When thrown |
@@ -278,7 +283,7 @@ You can swap them via the `selectorClass` named parameter on any pool.
 | Selector | Build | Pick | Arithmetic |
 |---|---|---|---|
 | `PrefixSumSelector` (default) | O(n) | O(log n) | Integer only |
-| `AliasTableSelector` | O(n) | O(1) | Integer pick (float only during build) |
+| `AliasTableSelector` | O(n) | O(1) | Integer only |
 
 ```php
 use WeightedSample\Pool\WeightedPool;
@@ -292,30 +297,46 @@ $pool = WeightedPool::of(
 ```
 
 **When to use AliasTableSelector:**
-The alias method picks in O(1) with a single integer random call — independent of item count.
-Prefer it when `draw()` is called frequently on pools with many items (≥ ~50).
+Alias build cost is ~2.8× higher than PrefixSum. That upfront cost only pays off when
+`draw()` is called many times on the **same pool instance** (i.e. a long-lived `WeightedPool`).
+
+Approximate break-even draw counts from benchmark:
+
+| Items | Break-even draws |
+|-------|-----------------|
+|    50 | ~40  |
+|   100 | ~65  |
+|  1000 | ~440 |
+
+If your pool is rebuilt per request or per user session with only a handful of draws,
+`AliasTableSelector` never recoups its build cost — use `PrefixSumSelector` instead.
+
+`DestructivePool` and `BoxPool` rebuild the selector on every `draw()`, so `AliasTableSelector`
+provides no benefit there regardless of item count.
 
 **When to use PrefixSumSelector (default):**
-Integer-only arithmetic throughout. Slightly lower overhead per build, and O(log n) pick
-is fast enough for small to medium item sets. Good default for most game gacha use cases.
+The right choice for almost all gacha and lottery use cases: low build overhead, and
+O(log n) pick is fast enough even for hundreds of items with typical draw counts.
 
 > **Note:** `AliasTableSelector` requires `n × W ≤ PHP_INT_MAX` (n = item count, W = total weight).
 > `PrefixSumSelector` only requires `W ≤ PHP_INT_MAX`, so it tolerates a larger item count for
 > the same total weight. Both selectors hold all n items in memory.
 
-### Speed comparison — 1,000,000 picks each
+### Speed comparison — 200,000 picks each (range(1, N) weights)
 
 ```
 Items   PrefixSum O(log n)   Alias O(1)   Ratio
-    10          ~194 ms        ~96 ms      2.0x faster
-    50          ~253 ms        ~99 ms      2.6x faster
-   100          ~270 ms        ~98 ms      2.8x faster
-   200          ~284 ms       ~100 ms      2.8x faster
-   500          ~316 ms       ~100 ms      3.2x faster
-  1000          ~328 ms       ~102 ms      3.2x faster
+  100          ~266 ms       ~105 ms      2.5x faster
+ 1000          ~333 ms       ~103 ms      3.2x faster
+ 2500          ~350 ms       ~107 ms      3.3x faster
+ 5000          ~382 ms       ~108 ms      3.5x faster
+10000          ~394 ms       ~110 ms      3.6x faster
+50000          ~465 ms       ~114 ms      4.1x faster
 ```
 
-Alias throughput stays constant at ~100 ms regardless of item count (true O(1)).
+Alias throughput stays nearly constant regardless of item count (true O(1)).
+Build time is ~2.8x higher for Alias; this upfront cost is amortized across draws.
+Run `php benchmark/compare.php` for break-even analysis by item count and draw count.
 
 ### Accuracy comparison — max deviation over 1,000,000 draws (seed=42)
 

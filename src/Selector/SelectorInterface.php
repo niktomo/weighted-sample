@@ -14,7 +14,7 @@ use WeightedSample\Randomizer\RandomizerInterface;
  *   PrefixSumSelector  — default. O(n) build, O(log n) pick. Integer-only.
  *                        Good default for small to medium item sets.
  *
- *   AliasTableSelector — O(n) build, O(1) pick. Integer pick (float only during build).
+ *   AliasTableSelector — O(n) build, O(1) pick. Integer only.
  *                        Prefer for large item sets (≥ ~50) with frequent draws.
  *
  * Inject via the `selectorClass` parameter on WeightedPool::of(),

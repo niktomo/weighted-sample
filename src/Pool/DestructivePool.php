@@ -71,21 +71,25 @@ final class DestructivePool implements ExhaustiblePoolInterface
         string $selectorClass = PrefixSumSelector::class,
         RandomizerInterface $randomizer = new SecureRandomizer(),
     ): self {
-        /** @var list<TItem> $filtered */
-        $filtered = [];
+        /** @var list<TItem> $filteredItems */
+        $filteredItems = [];
+        /** @var list<int> $filteredWeights */
+        $filteredWeights = [];
         foreach ($items as $item) {
-            if ($filter->accepts($item, $weightFn($item))) {
-                $filtered[] = $item;
+            $weight = $weightFn($item);
+            if ($filter->accepts($item, $weight)) {
+                $filteredItems[]   = $item;
+                $filteredWeights[] = $weight;
             }
         }
 
-        if ($filtered === []) {
+        if ($filteredItems === []) {
             throw new AllItemsFilteredException('Cannot create a DestructivePool: no items remain after filtering.');
         }
 
         return new self(
-            $filtered,
-            array_map($weightFn, $filtered),
+            $filteredItems,
+            $filteredWeights,
             $randomizer,
             $selectorClass,
         );
