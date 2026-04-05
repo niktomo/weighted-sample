@@ -1,0 +1,249 @@
+<?php
+
+declare(strict_types=1);
+
+namespace WeightedSample\Tests\Unit;
+
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\TestCase;
+use WeightedSample\Randomizer\RandomizerInterface;
+use WeightedSample\Randomizer\SeededRandomizer;
+use WeightedSample\Selector\FenwickTreeSelector;
+use WeightedSample\Selector\SelectorInterface;
+use WeightedSample\Selector\UpdatableSelectorInterface;
+
+class FenwickTreeSelectorTest extends TestCase
+{
+    // -------------------------------------------------------------------------
+    // インターフェース実装
+    // -------------------------------------------------------------------------
+
+    public function test_implements_selector_interface(): void
+    {
+        // Arrange & Act
+        $selector = FenwickTreeSelector::build([10, 90]);
+
+        // Assert
+        $this->assertInstanceOf(SelectorInterface::class, $selector, 'FenwickTreeSelector が SelectorInterface を実装していること');
+    }
+
+    public function test_implements_updatable_selector_interface(): void
+    {
+        // Arrange & Act
+        $selector = FenwickTreeSelector::build([10, 90]);
+
+        // Assert
+        $this->assertInstanceOf(UpdatableSelectorInterface::class, $selector, 'FenwickTreeSelector が UpdatableSelectorInterface を実装していること');
+    }
+
+    // -------------------------------------------------------------------------
+    // バリデーション
+    // -------------------------------------------------------------------------
+
+    public function test_build_throws_on_empty_weights(): void
+    {
+        // Arrange & Act & Assert
+        $this->expectException(\InvalidArgumentException::class);
+        FenwickTreeSelector::build([]);
+    }
+
+    /** @param list<int> $weights */
+    #[DataProvider('nonPositiveWeightProvider')]
+    public function test_build_throws_on_non_positive_weight(array $weights): void
+    {
+        // Arrange & Act & Assert
+        $this->expectException(\InvalidArgumentException::class);
+        FenwickTreeSelector::build($weights);
+    }
+
+    /** @return list<array{0: list<int>}> */
+    public static function nonPositiveWeightProvider(): array
+    {
+        return [
+            [[0, 10]],
+            [[-1, 10]],
+            [[0, 0]],
+            [[10, -5, 90]],
+        ];
+    }
+
+    // -------------------------------------------------------------------------
+    // pick() — 基本動作
+    // -------------------------------------------------------------------------
+
+    public function test_pick_returns_valid_index_range(): void
+    {
+        // Arrange
+        $selector   = FenwickTreeSelector::build([10, 30, 60]);
+        $randomizer = new SeededRandomizer(42);
+
+        // Act & Assert — 100 回引いてすべて有効なインデックスであること
+        for ($i = 0; $i < 100; $i++) {
+            $result = $selector->pick($randomizer);
+            $this->assertContains($result, [0, 1, 2], "{$i} 回目の pick が有効なインデックスを返すこと");
+        }
+    }
+
+    public function test_single_item_always_returns_zero(): void
+    {
+        // Arrange
+        $selector = FenwickTreeSelector::build([100]);
+
+        // Act & Assert
+        $this->assertSame(0, $selector->pick($this->valueRandomizer(0)), 'アイテムが 1 つのとき pick は常に 0 を返すこと（r=0）');
+        $this->assertSame(0, $selector->pick($this->valueRandomizer(99)), 'アイテムが 1 つのとき pick は常に 0 を返すこと（r=99）');
+    }
+
+    public function test_pick_boundary_below_first_threshold(): void
+    {
+        // Arrange — weights=[10, 90], total=100
+        //   prefix sums: [10, 100]
+        //   r=9  → cumsum[0]=10 > 9  → index 0
+        $selector = FenwickTreeSelector::build([10, 90]);
+
+        // Act & Assert
+        $this->assertSame(0, $selector->pick($this->valueRandomizer(9)), 'r=9 のとき index 0 が返ること（第 1 アイテムの帯の末尾）');
+    }
+
+    public function test_pick_boundary_at_first_threshold(): void
+    {
+        // Arrange — weights=[10, 90], total=100
+        //   r=10 → cumsum[0]=10 ≤ 10, cumsum[1]=100 > 10 → index 1
+        $selector = FenwickTreeSelector::build([10, 90]);
+
+        // Act & Assert
+        $this->assertSame(1, $selector->pick($this->valueRandomizer(10)), 'r=10 のとき index 1 が返ること（第 2 アイテムの帯の先頭）');
+    }
+
+    public function test_all_items_appear_in_sufficient_draws(): void
+    {
+        // Arrange — 重み [1, 9, 90] で 10000 回引いたとき全アイテムが出ること
+        $selector   = FenwickTreeSelector::build([1, 9, 90]);
+        $randomizer = new SeededRandomizer(42);
+        $seen       = [];
+
+        // Act
+        for ($i = 0; $i < 10000; $i++) {
+            $seen[$selector->pick($randomizer)] = true;
+        }
+
+        // Assert
+        $this->assertArrayHasKey(0, $seen, 'weight=1 のアイテム(index 0)が 10000 回中に少なくとも 1 回出ること');
+        $this->assertArrayHasKey(1, $seen, 'weight=9 のアイテム(index 1)が 10000 回中に少なくとも 1 回出ること');
+        $this->assertArrayHasKey(2, $seen, 'weight=90 のアイテム(index 2)が 10000 回中に少なくとも 1 回出ること');
+    }
+
+    // -------------------------------------------------------------------------
+    // totalWeight()
+    // -------------------------------------------------------------------------
+
+    public function test_total_weight_equals_sum_of_initial_weights(): void
+    {
+        // Arrange & Act
+        $selector = FenwickTreeSelector::build([10, 30, 60]);
+
+        // Assert
+        $this->assertSame(100, $selector->totalWeight(), '初期の totalWeight が重みの合計 100 であること');
+    }
+
+    // -------------------------------------------------------------------------
+    // update()
+    // -------------------------------------------------------------------------
+
+    public function test_update_to_zero_excludes_item_from_picks(): void
+    {
+        // Arrange — weights=[10, 90], index 0 を除外
+        $selector = FenwickTreeSelector::build([10, 90]);
+
+        // Act
+        $selector->update(0, 0);
+
+        // Assert — index 0 は二度と選ばれない
+        $seen = [];
+        $rng  = new SeededRandomizer(42);
+        for ($i = 0; $i < 1000; $i++) {
+            $seen[$selector->pick($rng)] = true;
+        }
+        $this->assertArrayNotHasKey(0, $seen, 'update(0, 0) 後に index 0 が選ばれないこと');
+        $this->assertArrayHasKey(1, $seen, 'update(0, 0) 後も index 1 は選ばれること');
+    }
+
+    public function test_update_decreases_total_weight(): void
+    {
+        // Arrange
+        $selector = FenwickTreeSelector::build([10, 30, 60]);
+
+        // Act — index 0 (weight=10) を除外
+        $selector->update(0, 0);
+
+        // Assert
+        $this->assertSame(90, $selector->totalWeight(), 'update(0, 0) 後の totalWeight が 90 になること');
+    }
+
+    public function test_update_all_to_zero_makes_total_weight_zero(): void
+    {
+        // Arrange
+        $selector = FenwickTreeSelector::build([10, 30, 60]);
+
+        // Act
+        $selector->update(0, 0);
+        $selector->update(1, 0);
+        $selector->update(2, 0);
+
+        // Assert
+        $this->assertSame(0, $selector->totalWeight(), '全アイテムを update(i, 0) すると totalWeight が 0 になること');
+    }
+
+    public function test_update_restores_weight(): void
+    {
+        // Arrange — index 1 を一時除外してから復元
+        $selector = FenwickTreeSelector::build([10, 30, 60]);
+        $selector->update(1, 0);
+
+        // Act
+        $selector->update(1, 30);
+
+        // Assert
+        $this->assertSame(100, $selector->totalWeight(), '復元後の totalWeight が元の 100 に戻ること');
+
+        $seen = [];
+        $rng  = new SeededRandomizer(42);
+        for ($i = 0; $i < 5000; $i++) {
+            $seen[$selector->pick($rng)] = true;
+        }
+        $this->assertArrayHasKey(1, $seen, '復元後に index 1 が再び選ばれること');
+    }
+
+    public function test_update_boundary_last_item_excluded(): void
+    {
+        // Arrange — 最後のアイテムを除外
+        $selector = FenwickTreeSelector::build([10, 30, 60]);
+        $selector->update(2, 0);
+
+        // Assert — index 2 は選ばれない
+        $seen = [];
+        $rng  = new SeededRandomizer(42);
+        for ($i = 0; $i < 1000; $i++) {
+            $seen[$selector->pick($rng)] = true;
+        }
+        $this->assertArrayNotHasKey(2, $seen, 'update(2, 0) 後に index 2 が選ばれないこと');
+    }
+
+    // -------------------------------------------------------------------------
+    // ヘルパー
+    // -------------------------------------------------------------------------
+
+    private function valueRandomizer(int $value): RandomizerInterface
+    {
+        return new class ($value) implements RandomizerInterface {
+            public function __construct(private readonly int $value)
+            {
+            }
+
+            public function next(int $max): int
+            {
+                return $this->value;
+            }
+        };
+    }
+}

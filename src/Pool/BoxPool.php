@@ -12,6 +12,7 @@ use WeightedSample\Randomizer\RandomizerInterface;
 use WeightedSample\Randomizer\SecureRandomizer;
 use WeightedSample\Selector\PrefixSumSelector;
 use WeightedSample\Selector\SelectorInterface;
+use WeightedSample\Selector\UpdatableSelectorInterface;
 
 /**
  * Weighted pool where each item has a finite count.
@@ -105,13 +106,41 @@ final class BoxPool implements ExhaustiblePoolInterface
 
     /**
      * Draws one item and decrements its count.
-     * Removes the item when count reaches zero.
+     * Excludes the item when count reaches zero.
+     *
+     * When the selector implements UpdatableSelectorInterface (e.g. FenwickTreeSelector),
+     * exhausted items are excluded via update(index, 0) — no rebuild required.
+     * Otherwise, the selector is fully rebuilt in O(n) when an item is exhausted.
      *
      * @return T
      * @throws EmptyPoolException
      */
     public function draw(): mixed
     {
+        if ($this->selector instanceof UpdatableSelectorInterface) {
+            // O(log n) update path — items array is kept intact, no rebuild needed
+            if ($this->selector->totalWeight() === 0) {
+                throw new EmptyPoolException('The pool is empty.');
+            }
+
+            $selectedIndex = $this->selector->pick($this->randomizer);
+            $item          = $this->items[$selectedIndex];
+            $newCount      = $this->counts[$selectedIndex] - 1;
+
+            if ($newCount === 0) {
+                $this->selector->update($selectedIndex, 0);
+            }
+
+            // Intermediate variable required: direct property index-assignment widens
+            // list<int> to non-empty-array<int,int> in PHPStan; array_values() re-narrows.
+            $counts                 = $this->counts;
+            $counts[$selectedIndex] = $newCount;
+            $this->counts           = array_values($counts);
+
+            return $item;
+        }
+
+        // O(n) rebuild path (PrefixSumSelector default)
         if ($this->selector === null) {
             throw new EmptyPoolException('The pool is empty.');
         }
@@ -121,7 +150,7 @@ final class BoxPool implements ExhaustiblePoolInterface
         $newCount      = $this->counts[$selectedIndex] - 1;
 
         if ($newCount === 0) {
-            // Item fully exhausted: weights change, so rebuild the selector.
+            // Item fully exhausted: rebuild selector without this item.
             array_splice($this->items, $selectedIndex, 1);
             array_splice($this->weights, $selectedIndex, 1);
             array_splice($this->counts, $selectedIndex, 1);
@@ -140,6 +169,10 @@ final class BoxPool implements ExhaustiblePoolInterface
 
     public function isEmpty(): bool
     {
+        if ($this->selector instanceof UpdatableSelectorInterface) {
+            return $this->selector->totalWeight() === 0;
+        }
+
         return $this->items === [];
     }
 }
