@@ -35,7 +35,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
-          coverage: none
+          coverage: ${{ matrix.php == '8.4' && 'xdebug' || 'none' }}
 
       - name: Install dependencies
         run: |
@@ -51,5 +51,24 @@ jobs:
         run: vendor/bin/phpstan analyse --memory-limit=512M
         if: matrix.php == '8.4'
 
+      - name: Run PHPMD
+        run: php -d error_reporting=24575 vendor/bin/phpmd src/ text phpmd.xml
+        if: matrix.php == '8.4'
+
       - name: Run PHPUnit
         run: vendor/bin/phpunit --no-coverage
+        if: matrix.php != '8.4'
+
+      - name: Run PHPUnit with coverage
+        run: vendor/bin/phpunit --coverage-clover coverage.xml
+        if: matrix.php == '8.4'
+        env:
+          XDEBUG_MODE: coverage
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: matrix.php == '8.4'
+        with:
+          name: coverage-report
+          path: coverage.xml
+          retention-days: 7

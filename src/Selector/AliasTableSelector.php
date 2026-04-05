@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace WeightedSample\Selector;
 
+use InvalidArgumentException;
+use OverflowException;
 use WeightedSample\Randomizer\RandomizerInterface;
 
 /**
@@ -52,7 +54,7 @@ final readonly class AliasTableSelector implements SelectorInterface
         $this->count = $itemCount;
 
         if ($itemCount === 0) {
-            throw new \InvalidArgumentException('weights must not be empty.');
+            throw new InvalidArgumentException('weights must not be empty.');
         }
 
         $total = array_sum($weights);
@@ -62,7 +64,7 @@ final readonly class AliasTableSelector implements SelectorInterface
         // prob[l] ≤ n × max(w[i]) ≤ n × W, and prob[s] < W, so the sum is at most (n+1) × W.
         // Require (n+1) × W ≤ PHP_INT_MAX: throw when n ≥ ⌊PHP_INT_MAX / W⌋.
         if ($total > 0 && $itemCount >= intdiv(\PHP_INT_MAX, $total)) {
-            throw new \OverflowException(
+            throw new OverflowException(
                 "n × W ({$itemCount} × {$total}) would exceed PHP_INT_MAX. Reduce item count or total weight.",
             );
         }
@@ -86,7 +88,7 @@ final readonly class AliasTableSelector implements SelectorInterface
 
         foreach ($weights as $index => $weight) {
             if ($weight <= 0) {
-                throw new \InvalidArgumentException("Each weight must be a positive integer, {$weight} given.");
+                throw new InvalidArgumentException("Each weight must be a positive integer, {$weight} given.");
             }
             $p         = $itemCount * $weight;   // n × w[i], exact integer
             $prob[]    = $p;

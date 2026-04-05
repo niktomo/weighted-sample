@@ -64,7 +64,6 @@ tend to appear earlier in the sequence.
 
 ```php
 use WeightedSample\Pool\DestructivePool;
-use WeightedSample\Exception\EmptyPoolException;
 
 $pool = DestructivePool::of(
     [
@@ -75,7 +74,10 @@ $pool = DestructivePool::of(
     fn(array $item) => $item['weight'],
 );
 
-// Draw all items in weighted-random order — each item appears exactly once
+// Single draw — picks one item, removes it from the pool
+$winner = $pool->draw();
+
+// Or draw all in weighted-random order — each item appears exactly once
 $order = [];
 while (! $pool->isEmpty()) {
     $order[] = $pool->draw()['id']; // e.g. [3, 2, 1] or [3, 1, 2] etc.
@@ -83,6 +85,9 @@ while (! $pool->isEmpty()) {
 
 // The original array is never modified — DestructivePool works on an internal copy
 ```
+
+> **Note:** `DestructivePool` is in-memory only. To resume across requests, persist which items
+> remain and reconstruct the pool from those on the next request.
 
 ---
 
@@ -98,24 +103,49 @@ until its stock runs out.
 ```php
 use WeightedSample\Pool\BoxPool;
 
-// 10 prizes total: 1 Gold, 3 Silver, 6 Bronze
-$pool = BoxPool::of(
-    [
-        ['name' => 'Gold',   'weight' => 10, 'stock' => 1],
-        ['name' => 'Silver', 'weight' => 30, 'stock' => 3],
-        ['name' => 'Bronze', 'weight' => 60, 'stock' => 6],
-    ],
+$items = [
+    ['name' => 'A', 'weight' => 10, 'stock' =>  1],
+    ['name' => 'B', 'weight' => 20, 'stock' =>  3],
+    ['name' => 'C', 'weight' => 20, 'stock' =>  3],
+    ['name' => 'D', 'weight' => 20, 'stock' =>  3],
+    ['name' => 'E', 'weight' => 30, 'stock' =>  5],
+    ['name' => 'F', 'weight' => 40, 'stock' => 10],
+    ['name' => 'G', 'weight' => 30, 'stock' =>  5],
+    ['name' => 'H', 'weight' => 30, 'stock' =>  5],
+    ['name' => 'I', 'weight' => 40, 'stock' => 10],
+    ['name' => 'J', 'weight' => 40, 'stock' => 10],
+];
+
+$newBox = fn() => BoxPool::of(
+    $items,
     fn(array $item) => $item['weight'],
-    fn(array $item) => $item['stock'],   // <-- stock extractor
+    fn(array $item) => $item['stock'],
 );
 
-// Draw until the box is empty (exactly 10 draws)
-while (! $pool->isEmpty()) {
-    $item = $pool->draw(); // returns the drawn item; stock is managed internally
-}
+// The box holds 55 prizes. A player draws 50 at a time, 3 rounds.
+//
+// Round 1 (draws  1– 50): 50 succeed — 5 remain in the current box
+// Round 2 (draws 51– 55): box empties after 5 draws — a fresh box is opened (55 prizes)
+//          (draws 56–100): 45 draws from the new box — 10 remain
+// Round 3 (draws 101–110): box empties after 10 draws — a fresh box is opened (55 prizes)
+//          (draws 111–150): 40 draws from the new box — 15 remain
 
-// The original array is never modified — BoxPool copies the data on construction
+$pool = $newBox();
+
+for ($round = 1; $round <= 3; $round++) {
+    $drawn = [];
+    for ($i = 0; $i < 50; $i++) {
+        if ($pool->isEmpty()) {
+            $pool = $newBox(); // open a fresh box and continue drawing
+        }
+        $drawn[] = $pool->draw();
+    }
+    // process $drawn for this round
+}
 ```
+
+> **Note:** `BoxPool` is in-memory only. To resume across requests, persist the remaining
+> stock counts and reconstruct the pool from those on the next request.
 
 **How BoxPool manages stock internally:**
 - On construction, BoxPool copies the items and records each stock count internally.
@@ -277,30 +307,51 @@ The default (no seed) uses `\Random\Engine\Secure` for cryptographically safe ra
 
 ## Selector Algorithms
 
-Two selection algorithms are available as `SelectorInterface` implementations.
+Three selection algorithms are available as `SelectorInterface` implementations.
 You can swap them via the `selectorClass` named parameter on any pool.
 
-| Selector | Build | Pick | Arithmetic |
-|---|---|---|---|
-| `PrefixSumSelector` (default) | O(n) | O(log n) | Integer only |
-| `AliasTableSelector` | O(n) | O(1) | Integer only |
+| Selector | Build | Pick | Update | Best for |
+|---|---|---|---|---|
+| `PrefixSumSelector` (default) | O(n) | O(log n) | O(n) rebuild | WeightedPool, small DestructivePool/BoxPool |
+| `AliasTableSelector` | O(n) | O(1) | O(n) rebuild | WeightedPool with many draws |
+| `FenwickTreeSelector` | O(n) | O(log n) | **O(log n)** | DestructivePool / BoxPool with N ≥ 500 |
+
+All three use integer-only arithmetic — no float rounding errors.
 
 ```php
 use WeightedSample\Pool\WeightedPool;
+use WeightedSample\Pool\DestructivePool;
 use WeightedSample\Selector\AliasTableSelector;
+use WeightedSample\Selector\FenwickTreeSelector;
 
+// WeightedPool with many repeated draws — use Alias for O(1) pick
 $pool = WeightedPool::of(
     $items,
     fn(array $item) => $item['weight'],
-    selectorClass: AliasTableSelector::class, // swap to O(1) alias method
+    selectorClass: AliasTableSelector::class,
+);
+
+// DestructivePool with large N — use FenwickTree for O(n log n) total vs O(n²)
+$pool = DestructivePool::of(
+    $items,
+    fn(array $item) => $item['weight'],
+    selectorClass: FenwickTreeSelector::class,
 );
 ```
 
-**When to use AliasTableSelector:**
-Alias build cost is ~2.8× higher than PrefixSum. That upfront cost only pays off when
+---
+
+### When to use each selector
+
+**PrefixSumSelector (default)**
+The right choice for almost all gacha and lottery use cases: low build overhead, and
+O(log n) pick is fast enough even for hundreds of items with typical draw counts.
+
+**AliasTableSelector**
+Build cost is ~2.8× higher than PrefixSum. That upfront cost only pays off when
 `draw()` is called many times on the **same pool instance** (i.e. a long-lived `WeightedPool`).
 
-Approximate break-even draw counts from benchmark:
+Approximate break-even draw counts:
 
 | Items | Break-even draws |
 |-------|-----------------|
@@ -309,45 +360,60 @@ Approximate break-even draw counts from benchmark:
 |  1000 | ~440 |
 
 If your pool is rebuilt per request or per user session with only a handful of draws,
-`AliasTableSelector` never recoups its build cost — use `PrefixSumSelector` instead.
+`AliasTableSelector` never recoups its build cost.
 
-`DestructivePool` and `BoxPool` rebuild the selector on every `draw()`, so `AliasTableSelector`
-provides no benefit there regardless of item count.
+> **Note:** `AliasTableSelector` is not efficient with `DestructivePool` or `BoxPool`.
+> These pools mutate on every draw — without `update()` support, Alias falls back to
+> a full O(n) rebuild per draw, giving O(n²) total. Use `FenwickTreeSelector` instead.
 
-**When to use PrefixSumSelector (default):**
-The right choice for almost all gacha and lottery use cases: low build overhead, and
-O(log n) pick is fast enough even for hundreds of items with typical draw counts.
+**FenwickTreeSelector**
+Implements `UpdatableSelectorInterface`, which adds an `update(int $index, int $newWeight): void`
+method. `DestructivePool` and `BoxPool` use this to exclude drawn items in O(log n) rather than
+rebuilding the entire selector — reducing total draw-all cost from O(n²) to O(n log n).
 
-> **Note:** `AliasTableSelector` requires `n × W ≤ PHP_INT_MAX` (n = item count, W = total weight).
-> `PrefixSumSelector` only requires `W ≤ PHP_INT_MAX`, so it tolerates a larger item count for
-> the same total weight. Both selectors hold all n items in memory.
+| N    | PrefixSum (µs/item) | Fenwick (µs/item) | Speedup |
+|------|--------------------:|------------------:|--------:|
+|  100 |              ~1.6   |             ~0.7  |    ~2x  |
+|  500 |              ~4.9   |             ~0.7  |    ~7x  |
+| 1000 |              ~9.3   |             ~0.8  |   ~12x  |
+| 5000 |             ~45.0   |             ~0.9  |   ~48x  |
+
+Use `FenwickTreeSelector` for `DestructivePool` / `BoxPool` when N ≥ 500.
+For immutable `WeightedPool`, `FenwickTreeSelector` pick is slightly slower than `PrefixSumSelector`
+(Fenwick tree descent has more overhead than binary search on a sorted prefix-sum array) — use
+`PrefixSumSelector` or `AliasTableSelector` for immutable pools.
+
+> **Overflow constraints:**
+> - `PrefixSumSelector` / `FenwickTreeSelector`: total weight W must not exceed `PHP_INT_MAX`
+> - `AliasTableSelector`: additionally requires `n × W ≤ PHP_INT_MAX` (n = item count)
 
 ### Speed comparison — 200,000 picks each (range(1, N) weights)
 
 ```
-Items   PrefixSum O(log n)   Alias O(1)   Ratio
-  100          ~266 ms       ~105 ms      2.5x faster
- 1000          ~333 ms       ~103 ms      3.2x faster
- 2500          ~350 ms       ~107 ms      3.3x faster
- 5000          ~382 ms       ~108 ms      3.5x faster
-10000          ~394 ms       ~110 ms      3.6x faster
-50000          ~465 ms       ~114 ms      4.1x faster
+Items   PrefixSum O(log n)   Fenwick O(log n)   Alias O(1)
+    10         ~0.200 µs          ~0.209 µs      ~0.104 µs
+    50         ~0.260 µs          ~0.289 µs      ~0.107 µs
+   100         ~0.287 µs          ~0.321 µs      ~0.106 µs
+   500         ~0.332 µs          ~0.385 µs      ~0.105 µs
+  1000         ~0.355 µs          ~0.415 µs      ~0.107 µs
+  5000         ~0.396 µs          ~0.516 µs      ~0.112 µs
+ 50000         ~0.480 µs          ~0.660 µs      ~0.115 µs
 ```
 
 Alias throughput stays nearly constant regardless of item count (true O(1)).
-Build time is ~2.8x higher for Alias; this upfront cost is amortized across draws.
-Run `php benchmark/compare.php` for break-even analysis by item count and draw count.
+PrefixSum and Fenwick grow as O(log n). For immutable pools, PrefixSum is faster than Fenwick.
+Run `php benchmark/compare.php` for full break-even analysis and DestructivePool scaling charts.
 
-### Accuracy comparison — max deviation over 1,000,000 draws (seed=42)
+### Accuracy comparison — max deviation over 100,000 draws (equal weights, seed=42)
 
 ```
-Weight distribution       PrefixSum   Alias
-1/3 each  [1,1,1]          ~0.057%   ~0.035%
-1/7, 2/7, 4/7  [1,2,4]    ~0.061%   ~0.032%
-1/5 each  [1,1,1,1,1]      ~0.048%   ~0.090%
+N      PrefixSum    Fenwick      Alias
+   10    ~1.06%      ~1.06%     ~1.12%
+  100    ~0.13%      ~0.13%     ~0.15%
+ 1000    ~0.02%      ~0.02%     ~0.02%
 ```
 
-Both algorithms are statistically equivalent — deviations are pure sampling noise,
+All three algorithms are statistically equivalent — deviations are pure sampling noise,
 not algorithmic error. Neither algorithm can produce a result with zero probability.
 
 ---

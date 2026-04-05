@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace WeightedSample\Internal;
 
+use InvalidArgumentException;
+use OverflowException;
+
 /**
  * Prefix sum array + binary search for O(log n) weighted index selection.
  *
@@ -20,7 +23,7 @@ final readonly class PrefixSumIndex
     public function __construct(array $weights)
     {
         if ($weights === []) {
-            throw new \InvalidArgumentException('weights must not be empty.');
+            throw new InvalidArgumentException('weights must not be empty.');
         }
 
         $runningTotal = 0;
@@ -28,10 +31,10 @@ final readonly class PrefixSumIndex
 
         foreach ($weights as $weight) {
             if ($weight <= 0) {
-                throw new \InvalidArgumentException("Each weight must be a positive integer, {$weight} given.");
+                throw new InvalidArgumentException("Each weight must be a positive integer, {$weight} given.");
             }
             if ($runningTotal > \PHP_INT_MAX - $weight) {
-                throw new \OverflowException('Total weight exceeds PHP_INT_MAX.');
+                throw new OverflowException('Total weight exceeds PHP_INT_MAX.');
             }
             $runningTotal += $weight;
             $sums[]        = $runningTotal;

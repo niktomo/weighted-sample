@@ -254,6 +254,102 @@ class DestructivePoolTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
+    // FenwickTreeSelector — UpdatableSelectorInterface パス
+    // -------------------------------------------------------------------------
+
+    public function test_fenwick_selector_drawn_item_is_not_drawn_again(): void
+    {
+        // Arrange — FenwickTree path: draw() calls update(index, 0) instead of splice+rebuild
+        $items = [
+            ['id' => 1, 'weight' => 10],
+            ['id' => 2, 'weight' => 20],
+            ['id' => 3, 'weight' => 70],
+        ];
+        $pool = DestructivePool::of(
+            $items,
+            fn (array $item) => $item['weight'],
+            selectorClass: \WeightedSample\Selector\FenwickTreeSelector::class,
+            randomizer: $this->fixedRandomizer(0),
+        );
+
+        // Act
+        $first  = $pool->draw()['id'];
+        $second = $pool->draw()['id'];
+        $third  = $pool->draw()['id'];
+
+        // Assert
+        $this->assertNotSame($first, $second, 'FenwickTree: 1回目と2回目の draw は異なるアイテムを返すこと');
+        $this->assertNotSame($second, $third, 'FenwickTree: 2回目と3回目の draw は異なるアイテムを返すこと');
+        $this->assertNotSame($first, $third, 'FenwickTree: 1回目と3回目の draw は異なるアイテムを返すこと');
+    }
+
+    public function test_fenwick_selector_all_items_can_be_drawn_exactly_once(): void
+    {
+        // Arrange
+        $items = [
+            ['id' => 1, 'weight' => 10],
+            ['id' => 2, 'weight' => 20],
+            ['id' => 3, 'weight' => 30],
+            ['id' => 4, 'weight' => 40],
+        ];
+        $pool = DestructivePool::of(
+            $items,
+            fn (array $item) => $item['weight'],
+            selectorClass: \WeightedSample\Selector\FenwickTreeSelector::class,
+        );
+
+        // Act
+        $drawnIds = [
+            $pool->draw()['id'],
+            $pool->draw()['id'],
+            $pool->draw()['id'],
+            $pool->draw()['id'],
+        ];
+
+        // Assert
+        sort($drawnIds);
+        $this->assertSame([1, 2, 3, 4], $drawnIds, 'FenwickTree: 全4アイテムが重複なく過不足なく引かれること');
+    }
+
+    public function test_fenwick_selector_is_empty_after_all_items_drawn(): void
+    {
+        // Arrange
+        $items = [
+            ['id' => 1, 'weight' => 10],
+            ['id' => 2, 'weight' => 90],
+        ];
+        $pool = DestructivePool::of(
+            $items,
+            fn (array $item) => $item['weight'],
+            selectorClass: \WeightedSample\Selector\FenwickTreeSelector::class,
+        );
+
+        // Act
+        $pool->draw();
+        $pool->draw();
+
+        // Assert
+        $this->assertTrue($pool->isEmpty(), 'FenwickTree: 全アイテムを引き切った後 isEmpty() が true になること');
+    }
+
+    public function test_fenwick_selector_throws_on_empty_pool(): void
+    {
+        // Arrange
+        $pool = DestructivePool::of(
+            [['id' => 1, 'weight' => 1]],
+            fn (array $item) => $item['weight'],
+            selectorClass: \WeightedSample\Selector\FenwickTreeSelector::class,
+        );
+        $pool->draw();
+
+        // Assert
+        $this->expectException(\WeightedSample\Exception\EmptyPoolException::class);
+
+        // Act
+        $pool->draw();
+    }
+
+    // -------------------------------------------------------------------------
     // -------------------------------------------------------------------------
     // iterable サポート
     // -------------------------------------------------------------------------
