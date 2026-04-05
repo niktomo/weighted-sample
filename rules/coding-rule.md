@@ -13,8 +13,8 @@
 
 | 悪い例 | 良い例 | 理由 | 適用バージョン |
 |--------|--------|------|---------------|
-| `$weightFn` | `$weightExtractor` | `Fn` は「関数である」という型情報に過ぎない。`Extractor` は「何をするか」を示す | **v1.1.0**（named args 破壊的変更） |
-| `$countFn` | `$countExtractor` | 同上 | **v1.1.0** |
+| `$weightFn` | `$weightExtractor` | `Fn` は「関数である」という型情報に過ぎない。`Extractor` は「何をするか」を示す | v1.1.0 で対応済み |
+| `$countFn` | `$countExtractor` | 同上 | v1.1.0 で対応済み |
 | `$cb` | `$onSuccess` | 「コールバック」は型名。「成功時に何をするか」が振る舞い |
 | `$fn` | `$transform` | 型名のみ。何を変換するかが不明 |
 

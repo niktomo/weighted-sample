@@ -105,7 +105,7 @@ $pool = BoxPool::of(
         ['name' => 'Bronze', 'weight' => 60, 'stock' => 6],
     ],
     fn(array $item) => $item['weight'],
-    fn(array $item) => $item['stock'],   // <-- 在庫数を返すクロージャ
+    fn(array $item) => $item['stock'],      // <-- 在庫数を返すクロージャ
 );
 
 // ボックスが空になるまで引く（合計10回）

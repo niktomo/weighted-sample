@@ -58,7 +58,7 @@ final class DestructivePool implements ExhaustiblePoolInterface
     /**
      * @template TItem
      * @param iterable<TItem>                    $items
-     * @param \Closure(TItem): int               $weightFn
+     * @param \Closure(TItem): int               $weightExtractor
      * @param ItemFilterInterface<TItem>          $filter
      * @param class-string<SelectorInterface>     $selectorClass
      * @param RandomizerInterface                 $randomizer
@@ -66,7 +66,7 @@ final class DestructivePool implements ExhaustiblePoolInterface
      */
     public static function of(
         iterable $items,
-        \Closure $weightFn,
+        \Closure $weightExtractor,
         ItemFilterInterface $filter = new PositiveValueFilter(),
         string $selectorClass = PrefixSumSelector::class,
         RandomizerInterface $randomizer = new SecureRandomizer(),
@@ -76,7 +76,7 @@ final class DestructivePool implements ExhaustiblePoolInterface
         /** @var list<int> $filteredWeights */
         $filteredWeights = [];
         foreach ($items as $item) {
-            $weight = $weightFn($item);
+            $weight = $weightExtractor($item);
             if ($filter->accepts($item, $weight)) {
                 $filteredItems[]   = $item;
                 $filteredWeights[] = $weight;

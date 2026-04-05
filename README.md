@@ -106,7 +106,7 @@ $pool = BoxPool::of(
         ['name' => 'Bronze', 'weight' => 60, 'stock' => 6],
     ],
     fn(array $item) => $item['weight'],
-    fn(array $item) => $item['stock'],   // <-- stock extractor
+    fn(array $item) => $item['stock'],      // <-- stock extractor
 );
 
 // Draw until the box is empty (exactly 10 draws)

@@ -59,8 +59,8 @@ final class BoxPool implements ExhaustiblePoolInterface
     /**
      * @template TItem
      * @param iterable<TItem>                         $items
-     * @param \Closure(TItem): int                    $weightFn
-     * @param \Closure(TItem): int                    $countFn
+     * @param \Closure(TItem): int                    $weightExtractor
+     * @param \Closure(TItem): int                    $countExtractor
      * @param CountedItemFilterInterface<TItem>       $filter
      * @param class-string<SelectorInterface>         $selectorClass
      * @param RandomizerInterface                     $randomizer
@@ -68,8 +68,8 @@ final class BoxPool implements ExhaustiblePoolInterface
      */
     public static function of(
         iterable $items,
-        \Closure $weightFn,
-        \Closure $countFn,
+        \Closure $weightExtractor,
+        \Closure $countExtractor,
         CountedItemFilterInterface $filter = new PositiveValueFilter(),
         string $selectorClass = PrefixSumSelector::class,
         RandomizerInterface $randomizer = new SecureRandomizer(),
@@ -81,8 +81,8 @@ final class BoxPool implements ExhaustiblePoolInterface
         /** @var list<int> $filteredCounts */
         $filteredCounts = [];
         foreach ($items as $item) {
-            $weight = $weightFn($item);
-            $count  = $countFn($item);
+            $weight = $weightExtractor($item);
+            $count  = $countExtractor($item);
             if ($filter->acceptsWithCount($item, $weight, $count)) {
                 $filteredItems[]   = $item;
                 $filteredWeights[] = $weight;
