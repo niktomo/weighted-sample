@@ -21,6 +21,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BREAKING** `$countFn` parameter renamed to `$countExtractor` in `BoxPool::of()`
   - Named argument callers must update: `weightFn:` → `weightExtractor:`, `countFn:` → `countExtractor:`
 
+## [1.0.1] - 2026-04-05
+
+### Fixed
+- `AliasTableSelector::build()` now throws `InvalidArgumentException` for empty weights and weight ≤ 0 (matches `PrefixSumSelector` behavior)
+
+### Changed
+- `SelectorInterface` docblock corrected: pick uses integer-only arithmetic (not float)
+- README: updated speed table to current benchmark values; added break-even guidance clarifying `PrefixSumSelector` as the right default for typical gacha use cases
+- README: documented `CompositeFilter` fallback behavior for filters that do not implement `CountedItemFilterInterface`
+- `benchmark/bench.php`, `benchmark/compare.php`: added build/pick/accuracy comparison with break-even heatmap
+
 ## [1.0.0] - 2026-03-31
 
 ### Added
