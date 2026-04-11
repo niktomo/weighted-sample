@@ -10,7 +10,8 @@ use WeightedSample\Filter\StrictValueFilter;
 use WeightedSample\Pool\PoolInterface;
 use WeightedSample\Pool\WeightedPool;
 use WeightedSample\Randomizer\RandomizerInterface;
-use WeightedSample\Selector\AliasTableSelector;
+use WeightedSample\Selector\AliasTableSelectorFactory;
+use WeightedSample\SelectorFactoryInterface;
 
 class WeightedPoolTest extends TestCase
 {
@@ -171,10 +172,10 @@ class WeightedPoolTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // selectorClass — セレクター差し替え
+    // selectorFactory — セレクターファクトリ差し替え
     // -------------------------------------------------------------------------
 
-    public function test_alias_table_selector_draws_valid_item(): void
+    public function test_accepts_selector_factory_interface(): void
     {
         // Arrange
         $items = [
@@ -184,14 +185,30 @@ class WeightedPoolTest extends TestCase
         $pool = WeightedPool::of(
             $items,
             fn (array $item) => $item['weight'],
-            selectorClass: AliasTableSelector::class,
+            selectorFactory: new AliasTableSelectorFactory(),
         );
 
         // Act
         $result = $pool->draw();
 
         // Assert
-        $this->assertContains($result['name'], ['A', 'B'], 'AliasTableSelector を使った draw がプール内のアイテムを返すこと');
+        $this->assertContains($result['name'], ['A', 'B'], 'SelectorFactoryInterface を注入した draw がプール内のアイテムを返すこと');
+    }
+
+    public function test_selector_factory_parameter_accepts_interface_type(): void
+    {
+        // Arrange — SelectorFactoryInterface 型として注入できること
+        $factory = new AliasTableSelectorFactory();
+        $this->assertInstanceOf(SelectorFactoryInterface::class, $factory, 'AliasTableSelectorFactory が SelectorFactoryInterface を実装していること');
+
+        $pool = WeightedPool::of(
+            [['name' => 'A', 'weight' => 10]],
+            fn (array $item) => $item['weight'],
+            selectorFactory: $factory,
+        );
+
+        // Assert
+        $this->assertInstanceOf(WeightedPool::class, $pool, 'SelectorFactoryInterface 経由で WeightedPool が構築されること');
     }
 
     // -------------------------------------------------------------------------

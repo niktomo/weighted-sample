@@ -10,18 +10,15 @@ use WeightedSample\Filter\ItemFilterInterface;
 use WeightedSample\Filter\PositiveValueFilter;
 use WeightedSample\Randomizer\RandomizerInterface;
 use WeightedSample\Randomizer\SecureRandomizer;
-use WeightedSample\Selector\PrefixSumSelector;
+use WeightedSample\Selector\PrefixSumSelectorFactory;
 use WeightedSample\Selector\SelectorInterface;
-use WeightedSample\Selector\UpdatableSelectorInterface;
+use WeightedSample\SelectorFactoryInterface;
 
 /**
  * Weighted pool that removes each drawn item.
  *
- * Performance note:
- *   With PrefixSumSelector (default): each draw() rebuilds the selector in O(n),
- *   total cost O(n²). Suitable for small to medium pools.
- *   With FenwickTreeSelector: each draw() calls update() in O(log n),
- *   total cost O(n log n). Recommended for large pools (n ≫ 1,000).
+ * @deprecated v2.0.0 Use BoxPool with count=1 instead:
+ *   BoxPool::of($items, $weightExtractor, fn($item) => 1)
  *
  * @template T
  * @implements ExhaustiblePoolInterface<T>
@@ -36,24 +33,19 @@ final class DestructivePool implements ExhaustiblePoolInterface
 
     private ?SelectorInterface $selector;
 
-    /** @var class-string<SelectorInterface> */
-    private readonly string $selectorClass;
-
     /**
-     * @param list<T>                        $items
-     * @param list<int>                      $weights  pre-computed weights parallel to $items
-     * @param class-string<SelectorInterface> $selectorClass
+     * @param list<T>   $items
+     * @param list<int> $weights
      */
     private function __construct(
         array $items,
         array $weights,
+        private readonly SelectorFactoryInterface $selectorFactory,
         private readonly RandomizerInterface $randomizer,
-        string $selectorClass,
     ) {
-        $this->items         = $items;
-        $this->weights       = $weights;
-        $this->selectorClass = $selectorClass;
-        $this->selector      = $items !== [] ? $selectorClass::build($weights) : null;
+        $this->items    = $items;
+        $this->weights  = $weights;
+        $this->selector = $items !== [] ? $selectorFactory->create($weights) : null;
     }
 
     /**
@@ -61,7 +53,7 @@ final class DestructivePool implements ExhaustiblePoolInterface
      * @param iterable<TItem>                    $items
      * @param \Closure(TItem): int               $weightExtractor
      * @param ItemFilterInterface<TItem>          $filter
-     * @param class-string<SelectorInterface>     $selectorClass
+     * @param SelectorFactoryInterface            $selectorFactory
      * @param RandomizerInterface                 $randomizer
      * @return self<TItem>
      */
@@ -69,7 +61,7 @@ final class DestructivePool implements ExhaustiblePoolInterface
         iterable $items,
         \Closure $weightExtractor,
         ItemFilterInterface $filter = new PositiveValueFilter(),
-        string $selectorClass = PrefixSumSelector::class,
+        SelectorFactoryInterface $selectorFactory = new PrefixSumSelectorFactory(),
         RandomizerInterface $randomizer = new SecureRandomizer(),
     ): self {
         /** @var list<TItem> $filteredItems */
@@ -91,37 +83,20 @@ final class DestructivePool implements ExhaustiblePoolInterface
         return new self(
             $filteredItems,
             $filteredWeights,
+            $selectorFactory,
             $randomizer,
-            $selectorClass,
         );
     }
 
     /**
      * Draws one item and removes it from the pool.
-     *
-     * When the selector implements UpdatableSelectorInterface (e.g. FenwickTreeSelector),
-     * removal is O(log n) via update(index, 0) — no rebuild required.
-     * Otherwise, the selector is fully rebuilt in O(n) after each draw.
+     * O(n) rebuild after each removal.
      *
      * @return T
      * @throws EmptyPoolException
      */
     public function draw(): mixed
     {
-        if ($this->selector instanceof UpdatableSelectorInterface) {
-            // O(log n) update path — items array is kept intact, no rebuild needed
-            if ($this->selector->totalWeight() === 0) {
-                throw new EmptyPoolException('The pool is empty.');
-            }
-
-            $selectedIndex = $this->selector->pick($this->randomizer);
-            $item          = $this->items[$selectedIndex];
-            $this->selector->update($selectedIndex, 0);
-
-            return $item;
-        }
-
-        // O(n) rebuild path (PrefixSumSelector default)
         if ($this->selector === null) {
             throw new EmptyPoolException('The pool is empty.');
         }
@@ -132,17 +107,31 @@ final class DestructivePool implements ExhaustiblePoolInterface
         array_splice($this->items, $selectedIndex, 1);
         array_splice($this->weights, $selectedIndex, 1);
 
-        $this->selector = $this->items !== [] ? ($this->selectorClass)::build($this->weights) : null;
+        $this->selector = $this->items !== [] ? $this->selectorFactory->create($this->weights) : null;
 
         return $item;
     }
 
-    public function isEmpty(): bool
+    /**
+     * @return list<T>
+     */
+    public function drawMany(int $count): array
     {
-        if ($this->selector instanceof UpdatableSelectorInterface) {
-            return $this->selector->totalWeight() === 0;
+        if ($count < 0) {
+            throw new \InvalidArgumentException('$count must be non-negative.');
         }
 
-        return $this->items === [];
+        $results = [];
+
+        for ($i = 0; $i < $count && !$this->isEmpty(); $i++) {
+            $results[] = $this->draw();
+        }
+
+        return $results;
+    }
+
+    public function isEmpty(): bool
+    {
+        return $this->selector === null;
     }
 }

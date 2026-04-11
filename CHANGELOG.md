@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-04-11
+
+### Added
+- `SelectorFactoryInterface` — stateless factory used by `WeightedPool` to construct a `SelectorInterface` from weights
+- `SelectorBundleFactoryInterface` — stateless factory used by `BoxPool` to construct a `SelectorBundle` (selector + builder pair)
+- `SelectorBuilderInterface` — stateful builder (`subtract()`, `currentSelector()`, `totalWeight()`) used internally by `BoxPool`
+- `SelectorBundle` — value object pairing a `SelectorInterface` with a `SelectorBuilderInterface`
+- `FenwickSelectorBuilder` — O(log n) update builder backed by a shared `FenwickTreeSelector` instance
+- `FenwickSelectorBundleFactory` — default `SelectorBundleFactoryInterface` for `BoxPool`; uses `FenwickSelectorBuilder`
+- `RebuildSelectorBuilder` — O(n) rebuild builder; caches `totalWeight` in O(1) via difference updates
+- `RebuildSelectorBundleFactory` — alternative `SelectorBundleFactoryInterface`; accepts any `SelectorFactoryInterface` (e.g. `AliasTableSelectorFactory`)
+- `PrefixSumSelectorFactory`, `AliasTableSelectorFactory`, `FenwickTreeSelectorFactory` — `SelectorFactoryInterface` implementations
+- `ExhaustiblePoolInterface::drawMany(int $count): list<T>` — draws up to `$count` items; stops early without exception if the pool empties; throws `\InvalidArgumentException` for negative `$count`
+- `DestructivePool::drawMany()` — same semantics as `BoxPool::drawMany()`
+
+### Changed
+- **BREAKING** `SelectorInterface` — `static build(array $weights): static` removed; `pick()` is now the only method
+- **BREAKING** `WeightedPool::of()` — `$selectorClass` (`class-string<SelectorInterface>`) replaced by `$selectorFactory` (`SelectorFactoryInterface`); default is `new PrefixSumSelectorFactory()`
+- **BREAKING** `BoxPool::of()` — `$selectorClass` (`class-string<SelectorInterface>`) replaced by `$selectorBundleFactory` (`SelectorBundleFactoryInterface`); default is `new FenwickSelectorBundleFactory()`
+- **BREAKING** `DestructivePool::of()` — `$selectorClass` (`class-string<SelectorInterface>`) replaced by `$selectorFactory` (`SelectorFactoryInterface`); default is `new PrefixSumSelectorFactory()`
+- **BREAKING** `UpdatableSelectorInterface` removed from `WeightedSample\Selector` namespace; `FenwickTreeSelector` no longer implements it — use `FenwickSelectorBundleFactory` instead
+- **BREAKING** `DestructivePool` marked `@deprecated`; use `BoxPool::of($items, $weightFn, fn($item) => 1)` as a drop-in replacement
+
+### Removed
+- **BREAKING** `WeightedSample\Selector\UpdatableSelectorInterface` — no longer needed; `FenwickSelectorBuilder` holds `FenwickTreeSelector` concretely
+
+### Migration Guide (v1.x → v2.0.0)
+
+```php
+// v1.x
+WeightedPool::of($items, $weightFn, selectorClass: AliasTableSelector::class);
+BoxPool::of($items, $weightFn, $countFn, selectorClass: FenwickTreeSelector::class);
+
+// v2.0.0
+use WeightedSample\Selector\AliasTableSelectorFactory;
+use WeightedSample\Builder\FenwickSelectorBundleFactory;
+
+WeightedPool::of($items, $weightFn, selectorFactory: new AliasTableSelectorFactory());
+BoxPool::of($items, $weightFn, $countFn, selectorBundleFactory: new FenwickSelectorBundleFactory());
+
+// DestructivePool → BoxPool
+// v1.x
+DestructivePool::of($items, $weightFn);
+// v2.0.0
+BoxPool::of($items, $weightFn, fn($item) => 1);
+```
+
 ## [1.1.0] - 2026-04-05
 
 ### Added

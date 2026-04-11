@@ -9,8 +9,9 @@ use WeightedSample\Filter\ItemFilterInterface;
 use WeightedSample\Filter\PositiveValueFilter;
 use WeightedSample\Randomizer\RandomizerInterface;
 use WeightedSample\Randomizer\SecureRandomizer;
-use WeightedSample\Selector\PrefixSumSelector;
+use WeightedSample\Selector\PrefixSumSelectorFactory;
 use WeightedSample\Selector\SelectorInterface;
+use WeightedSample\SelectorFactoryInterface;
 
 /**
  * Immutable weighted pool. draw() always selects from the full item set.
@@ -35,7 +36,7 @@ final readonly class WeightedPool implements PoolInterface
      * @param iterable<TItem>                    $items
      * @param \Closure(TItem): int               $weightExtractor
      * @param ItemFilterInterface<TItem>          $filter
-     * @param class-string<SelectorInterface>     $selectorClass
+     * @param SelectorFactoryInterface            $selectorFactory
      * @param RandomizerInterface                 $randomizer
      * @return self<TItem>
      */
@@ -43,7 +44,7 @@ final readonly class WeightedPool implements PoolInterface
         iterable $items,
         \Closure $weightExtractor,
         ItemFilterInterface $filter = new PositiveValueFilter(),
-        string $selectorClass = PrefixSumSelector::class,
+        SelectorFactoryInterface $selectorFactory = new PrefixSumSelectorFactory(),
         RandomizerInterface $randomizer = new SecureRandomizer(),
     ): self {
         /** @var list<TItem> $filteredItems */
@@ -64,7 +65,7 @@ final readonly class WeightedPool implements PoolInterface
 
         return new self(
             $filteredItems,
-            $selectorClass::build($filteredWeights),
+            $selectorFactory->create($filteredWeights),
             $randomizer,
         );
     }

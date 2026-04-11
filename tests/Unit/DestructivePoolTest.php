@@ -10,7 +10,8 @@ use WeightedSample\Filter\StrictValueFilter;
 use WeightedSample\Pool\DestructivePool;
 use WeightedSample\Pool\ExhaustiblePoolInterface;
 use WeightedSample\Randomizer\RandomizerInterface;
-use WeightedSample\Selector\AliasTableSelector;
+use WeightedSample\Selector\AliasTableSelectorFactory;
+use WeightedSample\Selector\FenwickTreeSelectorFactory;
 
 class DestructivePoolTest extends TestCase
 {
@@ -230,10 +231,10 @@ class DestructivePoolTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // selectorClass — セレクター差し替え
+    // selectorFactory — セレクターファクトリ差し替え
     // -------------------------------------------------------------------------
 
-    public function test_alias_table_selector_draws_valid_item(): void
+    public function test_alias_table_selector_factory_draws_valid_item(): void
     {
         // Arrange
         $items = [
@@ -243,23 +244,19 @@ class DestructivePoolTest extends TestCase
         $pool = DestructivePool::of(
             $items,
             fn (array $item) => $item['weight'],
-            selectorClass: AliasTableSelector::class,
+            selectorFactory: new AliasTableSelectorFactory(),
         );
 
         // Act
         $result = $pool->draw();
 
         // Assert
-        $this->assertContains($result['id'], [1, 2], 'AliasTableSelector を使った draw がプール内のアイテムを返すこと');
+        $this->assertContains($result['id'], [1, 2], 'AliasTableSelectorFactory を使った draw がプール内のアイテムを返すこと');
     }
 
-    // -------------------------------------------------------------------------
-    // FenwickTreeSelector — UpdatableSelectorInterface パス
-    // -------------------------------------------------------------------------
-
-    public function test_fenwick_selector_drawn_item_is_not_drawn_again(): void
+    public function test_fenwick_selector_factory_drawn_item_is_not_drawn_again(): void
     {
-        // Arrange — FenwickTree path: draw() calls update(index, 0) instead of splice+rebuild
+        // Arrange
         $items = [
             ['id' => 1, 'weight' => 10],
             ['id' => 2, 'weight' => 20],
@@ -268,7 +265,7 @@ class DestructivePoolTest extends TestCase
         $pool = DestructivePool::of(
             $items,
             fn (array $item) => $item['weight'],
-            selectorClass: \WeightedSample\Selector\FenwickTreeSelector::class,
+            selectorFactory: new FenwickTreeSelectorFactory(),
             randomizer: $this->fixedRandomizer(0),
         );
 
@@ -278,12 +275,12 @@ class DestructivePoolTest extends TestCase
         $third  = $pool->draw()['id'];
 
         // Assert
-        $this->assertNotSame($first, $second, 'FenwickTree: 1回目と2回目の draw は異なるアイテムを返すこと');
-        $this->assertNotSame($second, $third, 'FenwickTree: 2回目と3回目の draw は異なるアイテムを返すこと');
-        $this->assertNotSame($first, $third, 'FenwickTree: 1回目と3回目の draw は異なるアイテムを返すこと');
+        $this->assertNotSame($first, $second, '1回目と2回目の draw は異なるアイテムを返すこと');
+        $this->assertNotSame($second, $third, '2回目と3回目の draw は異なるアイテムを返すこと');
+        $this->assertNotSame($first, $third, '1回目と3回目の draw は異なるアイテムを返すこと');
     }
 
-    public function test_fenwick_selector_all_items_can_be_drawn_exactly_once(): void
+    public function test_fenwick_selector_factory_all_items_can_be_drawn_exactly_once(): void
     {
         // Arrange
         $items = [
@@ -295,7 +292,7 @@ class DestructivePoolTest extends TestCase
         $pool = DestructivePool::of(
             $items,
             fn (array $item) => $item['weight'],
-            selectorClass: \WeightedSample\Selector\FenwickTreeSelector::class,
+            selectorFactory: new FenwickTreeSelectorFactory(),
         );
 
         // Act
@@ -308,10 +305,10 @@ class DestructivePoolTest extends TestCase
 
         // Assert
         sort($drawnIds);
-        $this->assertSame([1, 2, 3, 4], $drawnIds, 'FenwickTree: 全4アイテムが重複なく過不足なく引かれること');
+        $this->assertSame([1, 2, 3, 4], $drawnIds, '全4アイテムが重複なく過不足なく引かれること');
     }
 
-    public function test_fenwick_selector_is_empty_after_all_items_drawn(): void
+    public function test_fenwick_selector_factory_is_empty_after_all_items_drawn(): void
     {
         // Arrange
         $items = [
@@ -321,7 +318,7 @@ class DestructivePoolTest extends TestCase
         $pool = DestructivePool::of(
             $items,
             fn (array $item) => $item['weight'],
-            selectorClass: \WeightedSample\Selector\FenwickTreeSelector::class,
+            selectorFactory: new FenwickTreeSelectorFactory(),
         );
 
         // Act
@@ -329,27 +326,160 @@ class DestructivePoolTest extends TestCase
         $pool->draw();
 
         // Assert
-        $this->assertTrue($pool->isEmpty(), 'FenwickTree: 全アイテムを引き切った後 isEmpty() が true になること');
+        $this->assertTrue($pool->isEmpty(), '全アイテムを引き切った後 isEmpty() が true になること');
     }
 
-    public function test_fenwick_selector_throws_on_empty_pool(): void
+    public function test_fenwick_selector_factory_throws_on_empty_pool(): void
     {
         // Arrange
         $pool = DestructivePool::of(
             [['id' => 1, 'weight' => 1]],
             fn (array $item) => $item['weight'],
-            selectorClass: \WeightedSample\Selector\FenwickTreeSelector::class,
+            selectorFactory: new FenwickTreeSelectorFactory(),
         );
         $pool->draw();
 
         // Assert
-        $this->expectException(\WeightedSample\Exception\EmptyPoolException::class);
+        $this->expectException(EmptyPoolException::class);
 
         // Act
         $pool->draw();
     }
 
     // -------------------------------------------------------------------------
+    // drawMany()
+    // -------------------------------------------------------------------------
+
+    public function test_draw_many_returns_empty_array_when_count_is_zero(): void
+    {
+        // Arrange
+        $pool = DestructivePool::of(
+            [['id' => 1, 'weight' => 10], ['id' => 2, 'weight' => 90]],
+            fn (array $item) => $item['weight'],
+        );
+
+        // Act
+        $result = $pool->drawMany(0);
+
+        // Assert
+        $this->assertSame([], $result, 'drawMany(0) は空配列を返すこと');
+    }
+
+    public function test_draw_many_throws_on_negative_count(): void
+    {
+        // Arrange
+        $pool = DestructivePool::of(
+            [['id' => 1, 'weight' => 10]],
+            fn (array $item) => $item['weight'],
+        );
+
+        // Assert
+        $this->expectException(\InvalidArgumentException::class);
+
+        // Act
+        $pool->drawMany(-1);
+    }
+
+    public function test_draw_many_throws_on_php_int_min(): void
+    {
+        // Arrange
+        $pool = DestructivePool::of(
+            [['id' => 1, 'weight' => 10]],
+            fn (array $item) => $item['weight'],
+        );
+
+        // Assert
+        $this->expectException(\InvalidArgumentException::class);
+
+        // Act
+        $pool->drawMany(\PHP_INT_MIN);
+    }
+
+    public function test_draw_many_returns_all_when_count_exceeds_pool_size(): void
+    {
+        // Arrange
+        $items = [
+            ['id' => 1, 'weight' => 10],
+            ['id' => 2, 'weight' => 20],
+            ['id' => 3, 'weight' => 70],
+        ];
+        $pool = DestructivePool::of($items, fn (array $item) => $item['weight']);
+
+        // Act
+        $result = $pool->drawMany(100);
+
+        // Assert
+        $this->assertCount(3, $result, 'count がプールサイズを超えるとき引けた分だけ返ること');
+        $this->assertTrue($pool->isEmpty(), 'drawMany 後にプールが空になること');
+    }
+
+    public function test_draw_many_with_php_int_max_returns_all_items(): void
+    {
+        // Arrange
+        $items = [
+            ['id' => 1, 'weight' => 10],
+            ['id' => 2, 'weight' => 90],
+        ];
+        $pool = DestructivePool::of($items, fn (array $item) => $item['weight']);
+
+        // Act — PHP_INT_MAX を渡しても例外なしで在庫分だけ返ること
+        $result = $pool->drawMany(\PHP_INT_MAX);
+
+        // Assert
+        $this->assertCount(2, $result, 'drawMany(PHP_INT_MAX) は在庫分だけ返すこと');
+    }
+
+    public function test_draw_many_returns_empty_array_when_pool_is_already_empty(): void
+    {
+        // Arrange
+        $pool = DestructivePool::of([['id' => 1, 'weight' => 10]], fn (array $item) => $item['weight']);
+        $pool->draw(); // 先に空にしておく
+
+        // Act
+        $result = $pool->drawMany(5);
+
+        // Assert
+        $this->assertSame([], $result, '既に空のプールで drawMany() は空配列を返すこと');
+    }
+
+    public function test_draw_many_count_one_behaves_like_draw(): void
+    {
+        // Arrange — 同一シードで2プール構築
+        $items = [
+            ['id' => 1, 'weight' => 10],
+            ['id' => 2, 'weight' => 90],
+        ];
+        $pool1 = DestructivePool::of($items, fn (array $item) => $item['weight'], randomizer: $this->fixedRandomizer(0));
+        $pool2 = DestructivePool::of($items, fn (array $item) => $item['weight'], randomizer: $this->fixedRandomizer(0));
+
+        // Act
+        $drawManyResult = $pool1->drawMany(1);
+        $drawResult     = $pool2->draw();
+
+        // Assert
+        $this->assertCount(1, $drawManyResult, 'drawMany(1) は 1 個返すこと');
+        $this->assertSame($drawResult, $drawManyResult[0], 'drawMany(1) は draw() と同じアイテムを返すこと');
+    }
+
+    public function test_draw_many_stops_when_pool_exhausted_mid_draw(): void
+    {
+        // Arrange — 2アイテム、3個要求
+        $items = [
+            ['id' => 1, 'weight' => 50],
+            ['id' => 2, 'weight' => 50],
+        ];
+        $pool = DestructivePool::of($items, fn (array $item) => $item['weight']);
+
+        // Act
+        $result = $pool->drawMany(3);
+
+        // Assert
+        $this->assertCount(2, $result, 'プールが途中で空になったとき引けた分だけ返ること');
+        $ids = array_column($result, 'id');
+        sort($ids);
+        $this->assertSame([1, 2], $ids, '引かれたアイテムはプール内の全アイテムであること');
+    }
+
     // -------------------------------------------------------------------------
     // iterable サポート
     // -------------------------------------------------------------------------
