@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace WeightedSample\Tests\Unit;
 
 use PHPUnit\Framework\TestCase;
+use WeightedSample\Builder\FenwickSelectorBundleFactory;
+use WeightedSample\Builder\RebuildSelectorBundleFactory;
 use WeightedSample\Exception\EmptyPoolException;
 use WeightedSample\Filter\StrictValueFilter;
 use WeightedSample\Pool\BoxPool;
 use WeightedSample\Pool\ExhaustiblePoolInterface;
 use WeightedSample\Randomizer\RandomizerInterface;
-use WeightedSample\Selector\AliasTableSelector;
+use WeightedSample\SelectorBundleFactoryInterface;
 
 class BoxPoolTest extends TestCase
 {
@@ -201,37 +203,33 @@ class BoxPoolTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // selectorClass — セレクター差し替え
+    // selectorBundleFactory — ファクトリ差し替え
     // -------------------------------------------------------------------------
 
-    public function test_alias_table_selector_draws_valid_item(): void
+    public function test_accepts_selector_bundle_factory_interface(): void
     {
-        // Arrange
-        $items = [
-            ['id' => 1, 'weight' => 10, 'count' => 2],
-            ['id' => 2, 'weight' => 90, 'count' => 3],
-        ];
+        // Arrange — SelectorBundleFactoryInterface 型として注入できること
+        $factory = new FenwickSelectorBundleFactory();
+        $this->assertInstanceOf(SelectorBundleFactoryInterface::class, $factory, 'FenwickSelectorBundleFactory が SelectorBundleFactoryInterface を実装していること');
+
         $pool = BoxPool::of(
-            $items,
+            [['id' => 1, 'weight' => 10, 'count' => 2]],
             fn (array $item) => $item['weight'],
             fn (array $item) => $item['count'],
-            selectorClass: AliasTableSelector::class,
+            bundleFactory: $factory,
         );
 
-        // Act
-        $result = $pool->draw();
-
         // Assert
-        $this->assertContains($result['id'], [1, 2], 'AliasTableSelector を使った draw がプール内のアイテムを返すこと');
+        $this->assertInstanceOf(BoxPool::class, $pool, 'SelectorBundleFactoryInterface 経由で BoxPool が構築されること');
     }
 
     // -------------------------------------------------------------------------
-    // FenwickTreeSelector — UpdatableSelectorInterface パス
+    // FenwickSelectorBundleFactory — O(log n) update パス
     // -------------------------------------------------------------------------
 
-    public function test_fenwick_selector_item_excluded_after_count_exhausted(): void
+    public function test_fenwick_bundle_item_excluded_after_count_exhausted(): void
     {
-        // Arrange — FenwickTree path: count=0 triggers update(index, 0) instead of splice+rebuild
+        // Arrange — FenwickSelectorBuilder path: count=0 triggers subtract(index) in O(log n)
         $items = [
             ['id' => 1, 'weight' => 10, 'count' => 1],
             ['id' => 2, 'weight' => 90, 'count' => 3],
@@ -240,24 +238,24 @@ class BoxPoolTest extends TestCase
             $items,
             fn (array $item) => $item['weight'],
             fn (array $item) => $item['count'],
-            selectorClass: \WeightedSample\Selector\FenwickTreeSelector::class,
+            bundleFactory: new FenwickSelectorBundleFactory(),
             randomizer: $this->fixedRandomizer(0),
         );
 
         // Act
-        $first  = $pool->draw()['id']; // id=1, count=0 → excluded via update(0, 0)
+        $first  = $pool->draw()['id']; // id=1, count=0 → excluded via subtract(0)
         $second = $pool->draw()['id']; // only id=2 remains
         $third  = $pool->draw()['id'];
         $fourth = $pool->draw()['id'];
 
         // Assert
-        $this->assertSame(1, $first, 'FenwickTree: 1回目: count=1 のアイテムが引かれること');
-        $this->assertSame(2, $second, 'FenwickTree: 2回目: count=0 になったアイテムは除外され id=2 が引かれること');
-        $this->assertSame(2, $third, 'FenwickTree: 3回目: id=2 が引かれること');
-        $this->assertSame(2, $fourth, 'FenwickTree: 4回目: id=2 が引かれること');
+        $this->assertSame(1, $first, 'FenwickBundle: 1回目: count=1 のアイテムが引かれること');
+        $this->assertSame(2, $second, 'FenwickBundle: 2回目: count=0 になったアイテムは除外され id=2 が引かれること');
+        $this->assertSame(2, $third, 'FenwickBundle: 3回目: id=2 が引かれること');
+        $this->assertSame(2, $fourth, 'FenwickBundle: 4回目: id=2 が引かれること');
     }
 
-    public function test_fenwick_selector_is_empty_after_all_counts_exhausted(): void
+    public function test_fenwick_bundle_is_empty_after_all_counts_exhausted(): void
     {
         // Arrange
         $items = [
@@ -268,7 +266,7 @@ class BoxPoolTest extends TestCase
             $items,
             fn (array $item) => $item['weight'],
             fn (array $item) => $item['count'],
-            selectorClass: \WeightedSample\Selector\FenwickTreeSelector::class,
+            bundleFactory: new FenwickSelectorBundleFactory(),
             randomizer: $this->fixedRandomizer(0),
         );
 
@@ -278,25 +276,57 @@ class BoxPoolTest extends TestCase
         $pool->draw(); // id=2, count=0 → excluded
 
         // Assert
-        $this->assertTrue($pool->isEmpty(), 'FenwickTree: 全 count を消費した後 isEmpty() が true になること');
+        $this->assertTrue($pool->isEmpty(), 'FenwickBundle: 全 count を消費した後 isEmpty() が true になること');
     }
 
-    public function test_fenwick_selector_throws_on_empty_pool(): void
+    public function test_fenwick_bundle_throws_on_empty_pool(): void
     {
         // Arrange
         $pool = BoxPool::of(
             [['id' => 1, 'weight' => 10, 'count' => 1]],
             fn (array $item) => $item['weight'],
             fn (array $item) => $item['count'],
-            selectorClass: \WeightedSample\Selector\FenwickTreeSelector::class,
+            bundleFactory: new FenwickSelectorBundleFactory(),
         );
         $pool->draw();
 
         // Assert
-        $this->expectException(\WeightedSample\Exception\EmptyPoolException::class);
+        $this->expectException(EmptyPoolException::class);
 
         // Act
         $pool->draw();
+    }
+
+    // -------------------------------------------------------------------------
+    // RebuildSelectorBundleFactory — O(n) rebuild パス
+    // -------------------------------------------------------------------------
+
+    public function test_rebuild_bundle_item_excluded_after_count_exhausted(): void
+    {
+        // Arrange — RebuildSelectorBuilder path: count=0 triggers subtract(index) then rebuild
+        $items = [
+            ['id' => 1, 'weight' => 10, 'count' => 1],
+            ['id' => 2, 'weight' => 90, 'count' => 3],
+        ];
+        $pool = BoxPool::of(
+            $items,
+            fn (array $item) => $item['weight'],
+            fn (array $item) => $item['count'],
+            bundleFactory: new RebuildSelectorBundleFactory(),
+            randomizer: $this->fixedRandomizer(0),
+        );
+
+        // Act
+        $first  = $pool->draw()['id'];
+        $second = $pool->draw()['id'];
+        $third  = $pool->draw()['id'];
+        $fourth = $pool->draw()['id'];
+
+        // Assert
+        $this->assertSame(1, $first, 'RebuildBundle: 1回目: count=1 のアイテムが引かれること');
+        $this->assertSame(2, $second, 'RebuildBundle: 2回目: count=0 になったアイテムは除外され id=2 が引かれること');
+        $this->assertSame(2, $third, 'RebuildBundle: 3回目: id=2 が引かれること');
+        $this->assertSame(2, $fourth, 'RebuildBundle: 4回目: id=2 が引かれること');
     }
 
     // -------------------------------------------------------------------------
@@ -319,6 +349,135 @@ class BoxPoolTest extends TestCase
         $this->assertInstanceOf(BoxPool::class, $pool, 'Generator を渡してもプールが生成されること');
         $result = $pool->draw();
         $this->assertContains($result['id'], [1, 2], 'draw() がプール内のアイテムを返すこと');
+    }
+
+    // -------------------------------------------------------------------------
+    // drawMany()
+    // -------------------------------------------------------------------------
+
+    public function test_draw_many_returns_empty_when_count_is_zero(): void
+    {
+        // Arrange
+        $pool = BoxPool::of(
+            [['id' => 1, 'weight' => 10, 'count' => 5]],
+            fn (array $item) => $item['weight'],
+            fn (array $item) => $item['count'],
+        );
+
+        // Act
+        $result = $pool->drawMany(0);
+
+        // Assert
+        $this->assertSame([], $result, 'count=0 のとき drawMany() は空 list を返すこと');
+    }
+
+    public function test_draw_many_returns_empty_when_pool_is_already_empty(): void
+    {
+        // Arrange — count=1 のアイテムを draw() で使い切る
+        $pool = BoxPool::of(
+            [['id' => 1, 'weight' => 10, 'count' => 1]],
+            fn (array $item) => $item['weight'],
+            fn (array $item) => $item['count'],
+        );
+        $pool->draw();
+
+        // Act
+        $result = $pool->drawMany(3);
+
+        // Assert
+        $this->assertSame([], $result, 'pool が空のとき drawMany() は空 list を返すこと');
+    }
+
+    public function test_draw_many_returns_requested_count_when_pool_has_enough(): void
+    {
+        // Arrange — count=10 のアイテムが1種類
+        $pool = BoxPool::of(
+            [['id' => 1, 'weight' => 10, 'count' => 10]],
+            fn (array $item) => $item['weight'],
+            fn (array $item) => $item['count'],
+            randomizer: $this->fixedRandomizer(0),
+        );
+
+        // Act
+        $result = $pool->drawMany(3);
+
+        // Assert
+        $this->assertCount(3, $result, 'pool に十分な在庫があるとき drawMany() は count 個返すこと');
+        $this->assertSame(1, $result[0]['id'], '1件目が正しいアイテムであること');
+        $this->assertSame(1, $result[1]['id'], '2件目が正しいアイテムであること');
+        $this->assertSame(1, $result[2]['id'], '3件目が正しいアイテムであること');
+    }
+
+    public function test_draw_many_stops_early_when_pool_exhausted(): void
+    {
+        // Arrange — count合計=3 なので 5回要求しても 3件で止まること
+        $items = [
+            ['id' => 1, 'weight' => 10, 'count' => 1],
+            ['id' => 2, 'weight' => 10, 'count' => 2],
+        ];
+        $pool = BoxPool::of(
+            $items,
+            fn (array $item) => $item['weight'],
+            fn (array $item) => $item['count'],
+            randomizer: $this->fixedRandomizer(0),
+        );
+
+        // Act
+        $result = $pool->drawMany(5);
+
+        // Assert
+        $this->assertCount(3, $result, 'pool が途中で空になったとき drawMany() は引けた分だけ返すこと');
+        $this->assertTrue($pool->isEmpty(), 'drawMany() 後に pool が空になること');
+    }
+
+    public function test_draw_many_throws_on_negative_count(): void
+    {
+        // Arrange
+        $pool = BoxPool::of(
+            [['id' => 1, 'weight' => 10, 'count' => 5]],
+            fn (array $item) => $item['weight'],
+            fn (array $item) => $item['count'],
+        );
+
+        // Assert
+        $this->expectException(\InvalidArgumentException::class);
+
+        // Act
+        $pool->drawMany(-1);
+    }
+
+    public function test_draw_many_throws_on_php_int_min(): void
+    {
+        // Arrange — PHP_INT_MIN は最も小さい負の整数
+        $pool = BoxPool::of(
+            [['id' => 1, 'weight' => 10, 'count' => 5]],
+            fn (array $item) => $item['weight'],
+            fn (array $item) => $item['count'],
+        );
+
+        // Assert
+        $this->expectException(\InvalidArgumentException::class);
+
+        // Act
+        $pool->drawMany(\PHP_INT_MIN);
+    }
+
+    public function test_draw_many_with_php_int_max_count_returns_all_items(): void
+    {
+        // Arrange — PHP_INT_MAX を指定しても pool の在庫分だけ返すこと
+        $pool = BoxPool::of(
+            [['id' => 1, 'weight' => 10, 'count' => 3]],
+            fn (array $item) => $item['weight'],
+            fn (array $item) => $item['count'],
+            randomizer: $this->fixedRandomizer(0),
+        );
+
+        // Act
+        $result = $pool->drawMany(\PHP_INT_MAX);
+
+        // Assert
+        $this->assertCount(3, $result, 'PHP_INT_MAX を指定しても在庫数分（3件）だけ返すこと');
+        $this->assertTrue($pool->isEmpty(), 'drawMany 後に pool が空になること');
     }
 
     // -------------------------------------------------------------------------

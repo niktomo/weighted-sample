@@ -3,7 +3,7 @@
 [English README](README.md)
 
 PHP 8.2+ 向け重み付きランダムサンプリングライブラリ。
-繰り返し抽選・破壊的抽選・ボックスガチャの3つのプール型をサポートします。
+繰り返し抽選とボックスガチャの2つのプール型をサポートします。
 
 [![CI](https://github.com/niktomo/weighted-sample/actions/workflows/ci.yml/badge.svg)](https://github.com/niktomo/weighted-sample/actions/workflows/ci.yml)
 [![PHP](https://img.shields.io/badge/PHP-8.2%2B-blue)](https://www.php.net)
@@ -24,8 +24,8 @@ composer require niktomo/weighted-sample
 | クラス | 抽選の挙動 | 枯渇する |
 |---|---|---|
 | `WeightedPool` | 毎回全アイテムから抽選 | しない |
-| `DestructivePool` | 各アイテムは1回のみ抽選可能。抽選済みアイテムは除外 | する |
 | `BoxPool` | 各アイテムに在庫数があり、抽選ごとに在庫を消費 | する |
+| `DestructivePool` | *(v2.0.0 で非推奨)* `BoxPool` + `count=1` と等価 | する |
 
 全プールのデフォルトは `SecureRandomizer`（`\Random\Engine\Secure`）です — 設定なしで暗号学的に安全な乱数を使用します。
 `SeededRandomizer(int $seed)` はテストや再現性が必要なシミュレーション専用です。
@@ -54,40 +54,14 @@ $result = $pool->draw(); // 90% の確率で R、9% で SR、1% で SSR
 
 ---
 
-## DestructivePool
+## DestructivePool *(非推奨)*
 
-抽選したアイテムはプールから完全に除外されます。
-全アイテムを引き切った後に `draw()` を呼ぶと `EmptyPoolException` がスローされます。
-
-**ユースケース:** 重み付きシャッフル — 全アイテムがいずれ必ず抽選されますが、
-重みが大きいアイテムほど早い順番で出やすくなります。
-
-```php
-use WeightedSample\Pool\DestructivePool;
-
-$pool = DestructivePool::of(
-    [
-        ['id' => 1, 'weight' => 10],
-        ['id' => 2, 'weight' => 30],
-        ['id' => 3, 'weight' => 60],
-    ],
-    fn(array $item) => $item['weight'],
-);
-
-// 単発抽選 — 1件を抽選してプールから除外する
-$winner = $pool->draw();
-
-// 全アイテムを重み付きランダム順で抽選 — 各アイテムは必ず1回だけ出る
-$order = [];
-while (! $pool->isEmpty()) {
-    $order[] = $pool->draw()['id']; // 例: [3, 2, 1] や [3, 1, 2] など
-}
-
-// 元の配列は変更されない — DestructivePool は内部コピーで動作する
-```
-
-> **注意:** `DestructivePool` はインメモリのみです。リクエストをまたいで再開するには、
-> 残アイテムを永続化し、次回リクエスト時にそのアイテムだけでプールを再構築してください。
+> **v2.0.0 で非推奨。** 代わりに `BoxPool` + `count=1` を使用してください:
+> ```php
+> BoxPool::of($items, fn($item) => $item['weight'], fn($item) => 1)
+> ```
+> `BoxPool` + `count=1` は完全な代替です: 各アイテムは最大1回抽選され、
+> 重みが大きいアイテムほど早く出やすく、`isEmpty()` / `drawMany()` の挙動も同一です。
 
 ---
 
@@ -143,6 +117,17 @@ for ($round = 1; $round <= 3; $round++) {
 }
 ```
 
+### drawMany()
+
+`drawMany(int $count)` は最大 `$count` 件を一度に抽選します。
+pool が `$count` 件に達する前に空になった場合は、引けた分だけ返します（例外なし）。
+
+```php
+$pool = BoxPool::of($items, fn($i) => $i['weight'], fn($i) => $i['stock']);
+
+$prizes = $pool->drawMany(10); // 最大10件。在庫が先に切れれば途中で終了
+```
+
 > **注意:** `BoxPool` はインメモリのみです。リクエストをまたいで再開するには、
 > 残在庫数を永続化し、次回リクエスト時にそのアイテムだけでプールを再構築してください。
 
@@ -153,15 +138,6 @@ for ($round = 1; $round <= 3; $round++) {
 - `BoxPool::of()` に渡した元の配列は一切変更されません。
 
 ---
-
-## DestructivePool vs BoxPool
-
-| | `DestructivePool` | `BoxPool` |
-|---|---|---|
-| アイテムの扱い | 各アイテムは一意（重複なし） | 同じ種別を在庫数分だけ複数回抽選可能 |
-| 抽選後の挙動 | アイテムを即時除外 | 在庫を 1 消費し、0 になれば除外 |
-| 合計抽選回数 | アイテム数と同じ | 全在庫数の合計と同じ |
-| 典型的なユースケース | くじ引き・シャッフル再生 | ボックスガチャ・在庫管理 |
 
 ---
 
@@ -305,35 +281,46 @@ $result = $pool->draw();
 
 ## セレクターアルゴリズム
 
-3つの選択アルゴリズムを `SelectorInterface` の実装として提供しています。
-全プールの `selectorClass` 名前付き引数で差し替え可能です。
+3つの選択アルゴリズムを提供しています。
+`selectorFactory`（WeightedPool）または `selectorBundleFactory`（BoxPool）で差し替え可能です。
 
-| セレクター | 構築 | 抽選 | 更新 | 適した用途 |
+| セレクター / ファクトリ | 構築 | 抽選 | 更新 | 適した用途 |
 |---|---|---|---|---|
-| `PrefixSumSelector`（デフォルト） | O(n) | O(log n) | O(n) 再構築 | WeightedPool、小規模 DestructivePool/BoxPool |
-| `AliasTableSelector` | O(n) | O(1) | O(n) 再構築 | draw 回数が多い WeightedPool |
-| `FenwickTreeSelector` | O(n) | O(log n) | **O(log n)** | N ≥ 500 の DestructivePool / BoxPool |
+| `PrefixSumSelectorFactory`（WeightedPool デフォルト） | O(n) | O(log n) | O(n) 再構築 | WeightedPool、小規模 BoxPool |
+| `AliasTableSelectorFactory` | O(n) | O(1) | O(n) 再構築 | draw 回数が多い WeightedPool |
+| `FenwickSelectorBundleFactory`（BoxPool デフォルト） | O(n) | O(log n) | **O(log n)** | N ≥ 500 の BoxPool |
+| `RebuildSelectorBundleFactory` | O(n) | O(log n) | O(n) 再構築 | AliasTable pick が必要な BoxPool |
 
 3つすべて整数演算のみ — float による丸め誤差なし。
 
 ```php
 use WeightedSample\Pool\WeightedPool;
-use WeightedSample\Pool\DestructivePool;
-use WeightedSample\Selector\AliasTableSelector;
-use WeightedSample\Selector\FenwickTreeSelector;
+use WeightedSample\Pool\BoxPool;
+use WeightedSample\Selector\AliasTableSelectorFactory;
+use WeightedSample\Builder\FenwickSelectorBundleFactory;
+use WeightedSample\Builder\RebuildSelectorBundleFactory;
 
 // draw 回数が多い WeightedPool — Alias で O(1) 抽選
 $pool = WeightedPool::of(
     $items,
     fn(array $item) => $item['weight'],
-    selectorClass: AliasTableSelector::class,
+    selectorFactory: new AliasTableSelectorFactory(),
 );
 
-// 大規模 DestructivePool — FenwickTree で O(n log n) に抑える
-$pool = DestructivePool::of(
+// 大規模 BoxPool — FenwickSelectorBundleFactory がデフォルトで O(n log n)
+$pool = BoxPool::of(
     $items,
     fn(array $item) => $item['weight'],
-    selectorClass: FenwickTreeSelector::class,
+    fn(array $item) => $item['stock'],
+    selectorBundleFactory: new FenwickSelectorBundleFactory(),
+);
+
+// BoxPool で AliasTable pick（O(1)）が必要な場合
+$pool = BoxPool::of(
+    $items,
+    fn(array $item) => $item['weight'],
+    fn(array $item) => $item['stock'],
+    selectorBundleFactory: new RebuildSelectorBundleFactory(new AliasTableSelectorFactory()),
 );
 ```
 
@@ -364,22 +351,22 @@ Alias はビルドコストを回収できません。その場合は `PrefixSum
 > draw のたびに O(n) の全再構築が発生し、合計コストが O(n²) になります。
 > これらのプールには `FenwickTreeSelector` を使ってください。
 
-**FenwickTreeSelector**
-`UpdatableSelectorInterface` を実装しており、`update(int $index, int $newWeight): void`
-メソッドを持ちます。`DestructivePool` と `BoxPool` はこれを使って抽選済みアイテムを
-O(log n) で除外します — セレクタ全体の再構築が不要になり、全アイテム draw の合計コストが
-O(n²) から O(n log n) に改善されます。
+**FenwickTreeSelector / FenwickSelectorBundleFactory**
+`FenwickSelectorBundleFactory`（BoxPool のデフォルト）は `FenwickTreeSelector` と
+`FenwickSelectorBuilder` をペアリングします。アイテムが枯渇するとビルダーが
+O(log n) の `update(index, 0)` を呼び、セレクタ全体の再構築を不要にします —
+全アイテム draw の合計コストが O(n²) から O(n log n) に改善されます。
 
-| N    | PrefixSum（µs/アイテム） | Fenwick（µs/アイテム） | 高速化 |
-|------|--------------------:|------------------:|-------:|
-|  100 |              ~1.6   |             ~0.7  |   ~2倍 |
-|  500 |              ~4.9   |             ~0.7  |   ~7倍 |
-| 1000 |              ~9.3   |             ~0.8  |  ~12倍 |
-| 5000 |             ~45.0   |             ~0.9  |  ~48倍 |
+| N    | RebuildBuilder（µs/アイテム） | FenwickBuilder（µs/アイテム） | 高速化 |
+|------|-----------------------------:|-----------------------------:|-------:|
+|  100 |                       ~3.3   |                      ~0.9    |  ~3.5倍 |
+|  500 |                      ~11.4   |                      ~1.4    |  ~8.2倍 |
+| 1000 |                      ~21.3   |                      ~1.9    | ~11.1倍 |
+| 5000 |                     ~100.1   |                      ~6.0    | ~16.8倍 |
 
-`DestructivePool` / `BoxPool` で N ≥ 500 の場合は `FenwickTreeSelector` を使ってください。
+`BoxPool` で N ≥ 500 の場合は `FenwickSelectorBundleFactory`（デフォルト）を使ってください。
 イミュータブルな `WeightedPool` では Fenwick のツリー降下は prefix sum の二分探索より
-オーバーヘッドが大きいため、`PrefixSumSelector` か `AliasTableSelector` を使ってください。
+オーバーヘッドが大きいため、`PrefixSumSelectorFactory` か `AliasTableSelectorFactory` を使ってください。
 
 > **オーバーフロー制約:**
 > - `PrefixSumSelector` / `FenwickTreeSelector`: 合計重み W が `PHP_INT_MAX` 以下であること
@@ -389,24 +376,24 @@ O(n²) から O(n log n) に改善されます。
 
 ```
 アイテム数   PrefixSum O(log n)   Fenwick O(log n)   Alias O(1)
-       10         ~0.200 µs          ~0.209 µs      ~0.104 µs
-       50         ~0.260 µs          ~0.289 µs      ~0.107 µs
-      100         ~0.287 µs          ~0.321 µs      ~0.106 µs
-      500         ~0.332 µs          ~0.385 µs      ~0.105 µs
-     1000         ~0.355 µs          ~0.415 µs      ~0.107 µs
-     5000         ~0.396 µs          ~0.516 µs      ~0.112 µs
-    50000         ~0.480 µs          ~0.660 µs      ~0.115 µs
+       10         ~0.138 µs          ~0.139 µs      ~0.102 µs
+       50         ~0.170 µs          ~0.173 µs      ~0.106 µs
+      100         ~0.200 µs          ~0.217 µs      ~0.110 µs
+      500         ~0.350 µs          ~0.401 µs      ~0.111 µs
+     1000         ~0.366 µs          ~0.436 µs      ~0.110 µs
+     5000         ~0.430 µs          ~0.532 µs      ~0.112 µs
+    50000         ~0.517 µs          ~0.680 µs      ~0.119 µs
 ```
 
 Alias の抽選スループットはアイテム数に関わらずほぼ一定（真の O(1)）。
 PrefixSum と Fenwick は O(log n) で増加。イミュータブルプールでは PrefixSum の方が Fenwick より高速。
-`php benchmark/compare.php` でアイテム数・draw 数別の損益分岐点と DestructivePool スケーリングを確認できる。
+`php benchmark/compare.php` でアイテム数・draw 数別の損益分岐点と BoxPool スケーリングを確認できる。
 
-### 精度比較 — 10万回抽選での最大偏差（均等重み、seed=42）
+### 精度比較 — N×500回抽選での最大偏差（均等重み、seed=99）
 
 ```
 N        PrefixSum    Fenwick    Alias
-   10     ~1.06%      ~1.06%    ~1.12%
+   50     ~0.22%      ~0.22%    ~0.24%
   100     ~0.13%      ~0.13%    ~0.15%
  1000     ~0.02%      ~0.02%    ~0.02%
 ```
@@ -422,15 +409,15 @@ N        PrefixSum    Fenwick    Alias
 
 ```
 Item        Draws    Actual%  Expected%     Diff
-SSR         10034     1.003%     1.000%   +0.003%
-SR          90107     9.011%     9.000%   +0.011%
-R          899859    89.986%    90.000%   -0.014%
+SSR         10042     1.004%     1.000%   +0.004%
+SR          89893     8.989%     9.000%   -0.011%
+R          900065    90.007%    90.000%   +0.007%
 ```
 
 **WeightedPool — 100アイテム（weight 1〜100）、100万回抽選**
 
 ```
-最大偏差: ~0.024%（0.5ポイントを超えたアイテムはなし）
+最大偏差: ~0.026%（0.5ポイントを超えたアイテムはなし）
 ```
 
 ベンチマークを実行する場合：

@@ -29,7 +29,7 @@ use WeightedSample\Randomizer\RandomizerInterface;
  *   Descent finds the largest 1-indexed position j where prefixSum(j) ≤ r.
  *   Return j as the 0-indexed answer (the item whose cumulative range contains r).
  */
-final class FenwickTreeSelector implements UpdatableSelectorInterface
+final class FenwickTreeSelector implements SelectorInterface
 {
     /** @var array<int, int>  1-indexed Fenwick tree; tree[0] is unused (always 0) */
     private array $tree;
@@ -105,8 +105,25 @@ final class FenwickTreeSelector implements UpdatableSelectorInterface
         $pos     = 0;
         $bitMask = $this->highBit;
 
-        // O(log n) descent: find the largest 1-indexed j where prefixSum(j) ≤ r.
-        // j is also the correct 0-indexed return value.
+        // O(log n) binary descent on the Fenwick tree.
+        //
+        // Goal: find the 0-indexed item i such that
+        //   prefixSum(i) ≤ r < prefixSum(i + 1),
+        //   i.e. the item whose cumulative weight range contains r.
+        //
+        // The Fenwick tree forms an implicit complete binary tree of height
+        // ⌈log₂(n)⌉.  $bitMask starts at the highest power of 2 ≤ $size and
+        // halves on every iteration — exactly ⌈log₂(size)⌉ probes, O(log n).
+        //
+        // At each step, $this->tree[$pos + $bitMask] stores the total weight of
+        // the subtree rooted at that node.
+        //   - If that subtree sum ≤ remaining $r: the target lies further right;
+        //     advance $pos past the subtree and subtract its sum from $r.
+        //   - Otherwise: the target lies to the left; $pos stays unchanged.
+        //
+        // At termination, $pos ∈ [0, size) is the 0-indexed item index.
+        // Starting $pos at 0 and advancing by Fenwick $bitMask values yields the
+        // correct 0-indexed result directly — no off-by-one adjustment needed.
         while ($bitMask > 0) {
             $next = $pos + $bitMask;
             if ($next <= $this->size && $this->tree[$next] <= $r) {

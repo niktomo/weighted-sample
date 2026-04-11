@@ -24,8 +24,8 @@ composer require niktomo/weighted-sample
 | Class | Draw behavior | Exhaustible |
 |---|---|---|
 | `WeightedPool` | Always draws from the full set | No |
-| `DestructivePool` | Each item can be drawn at most once; drawn items are removed | Yes |
 | `BoxPool` | Each item has a finite stock count; stock is decremented on draw | Yes |
+| `DestructivePool` | *(deprecated v2.0.0)* Equivalent to `BoxPool` with `count=1` | Yes |
 
 All pools default to `SecureRandomizer` (`\Random\Engine\Secure`) — cryptographically safe with no configuration required.
 Inject `SeededRandomizer(int $seed)` only for tests or reproducible simulations.
@@ -54,40 +54,14 @@ $result = $pool->draw(); // returns one item — 90% chance of R, 9% SR, 1% SSR
 
 ---
 
-## DestructivePool
+## DestructivePool *(deprecated)*
 
-Each drawn item is permanently removed from the pool.
-Once all items have been drawn, further calls to `draw()` throw `EmptyPoolException`.
-
-**Use case:** Weighted shuffle — all items will eventually be drawn, but higher-weight items
-tend to appear earlier in the sequence.
-
-```php
-use WeightedSample\Pool\DestructivePool;
-
-$pool = DestructivePool::of(
-    [
-        ['id' => 1, 'weight' => 10],
-        ['id' => 2, 'weight' => 30],
-        ['id' => 3, 'weight' => 60],
-    ],
-    fn(array $item) => $item['weight'],
-);
-
-// Single draw — picks one item, removes it from the pool
-$winner = $pool->draw();
-
-// Or draw all in weighted-random order — each item appears exactly once
-$order = [];
-while (! $pool->isEmpty()) {
-    $order[] = $pool->draw()['id']; // e.g. [3, 2, 1] or [3, 1, 2] etc.
-}
-
-// The original array is never modified — DestructivePool works on an internal copy
-```
-
-> **Note:** `DestructivePool` is in-memory only. To resume across requests, persist which items
-> remain and reconstruct the pool from those on the next request.
+> **Deprecated in v2.0.0.** Use `BoxPool` with `count=1` instead:
+> ```php
+> BoxPool::of($items, fn($item) => $item['weight'], fn($item) => 1)
+> ```
+> `BoxPool` with `count=1` is a direct drop-in: each item is drawn at most once,
+> higher-weight items appear earlier in the sequence, and `isEmpty()` / `drawMany()` behave identically.
 
 ---
 
@@ -142,6 +116,17 @@ for ($round = 1; $round <= 3; $round++) {
     }
     // process $drawn for this round
 }
+```
+
+### drawMany()
+
+`drawMany(int $count)` draws up to `$count` items in one call.
+If the pool empties before `$count` is reached, it returns only what was drawn — no exception.
+
+```php
+$pool = BoxPool::of($items, fn($i) => $i['weight'], fn($i) => $i['stock']);
+
+$prizes = $pool->drawMany(10); // up to 10 items; fewer if pool runs dry
 ```
 
 > **Note:** `BoxPool` is in-memory only. To resume across requests, persist the remaining
@@ -307,35 +292,49 @@ The default (no seed) uses `\Random\Engine\Secure` for cryptographically safe ra
 
 ## Selector Algorithms
 
-Three selection algorithms are available as `SelectorInterface` implementations.
-You can swap them via the `selectorClass` named parameter on any pool.
+Three selection algorithms are available. Swap them via `selectorFactory` (WeightedPool) or
+`selectorBundleFactory` (BoxPool).
 
-| Selector | Build | Pick | Update | Best for |
+| Selector / Factory | Build | Pick | Update | Best for |
 |---|---|---|---|---|
-| `PrefixSumSelector` (default) | O(n) | O(log n) | O(n) rebuild | WeightedPool, small DestructivePool/BoxPool |
-| `AliasTableSelector` | O(n) | O(1) | O(n) rebuild | WeightedPool with many draws |
-| `FenwickTreeSelector` | O(n) | O(log n) | **O(log n)** | DestructivePool / BoxPool with N ≥ 500 |
+| `PrefixSumSelectorFactory` (default for WeightedPool) | O(n) | O(log n) | O(n) rebuild | WeightedPool, small BoxPool |
+| `AliasTableSelectorFactory` | O(n) | O(1) | O(n) rebuild | WeightedPool with many draws |
+| `FenwickSelectorBundleFactory` (default for BoxPool) | O(n) | O(log n) | **O(log n)** | BoxPool with N ≥ 500 |
+| `RebuildSelectorBundleFactory` | O(n) | O(log n) | O(n) rebuild | BoxPool when AliasTable pick is required |
 
-All three use integer-only arithmetic — no float rounding errors.
+> `FenwickSelectorBundleFactory` pairs a `FenwickTreeSelector` with a `FenwickSelectorBuilder` that share the **same instance**. When an item is exhausted, `subtract()` calls `update(index, 0)` on the shared selector in O(log n) — no object creation, no array copy.
+
+All algorithms use integer-only arithmetic — no float rounding errors.
 
 ```php
 use WeightedSample\Pool\WeightedPool;
-use WeightedSample\Pool\DestructivePool;
-use WeightedSample\Selector\AliasTableSelector;
-use WeightedSample\Selector\FenwickTreeSelector;
+use WeightedSample\Pool\BoxPool;
+use WeightedSample\Selector\AliasTableSelectorFactory;
+use WeightedSample\Builder\FenwickSelectorBundleFactory;
+use WeightedSample\Builder\RebuildSelectorBundleFactory;
+use WeightedSample\Selector\AliasTableSelectorFactory;
 
 // WeightedPool with many repeated draws — use Alias for O(1) pick
 $pool = WeightedPool::of(
     $items,
     fn(array $item) => $item['weight'],
-    selectorClass: AliasTableSelector::class,
+    selectorFactory: new AliasTableSelectorFactory(),
 );
 
-// DestructivePool with large N — use FenwickTree for O(n log n) total vs O(n²)
-$pool = DestructivePool::of(
+// BoxPool with large N — FenwickSelectorBundleFactory is the default (O(n log n) total)
+$pool = BoxPool::of(
     $items,
     fn(array $item) => $item['weight'],
-    selectorClass: FenwickTreeSelector::class,
+    fn(array $item) => $item['stock'],
+    selectorBundleFactory: new FenwickSelectorBundleFactory(),
+);
+
+// BoxPool with AliasTable pick (O(1)) — use RebuildSelectorBundleFactory
+$pool = BoxPool::of(
+    $items,
+    fn(array $item) => $item['weight'],
+    fn(array $item) => $item['stock'],
+    selectorBundleFactory: new RebuildSelectorBundleFactory(new AliasTableSelectorFactory()),
 );
 ```
 
@@ -366,19 +365,19 @@ If your pool is rebuilt per request or per user session with only a handful of d
 > These pools mutate on every draw — without `update()` support, Alias falls back to
 > a full O(n) rebuild per draw, giving O(n²) total. Use `FenwickTreeSelector` instead.
 
-**FenwickTreeSelector**
-Implements `UpdatableSelectorInterface`, which adds an `update(int $index, int $newWeight): void`
-method. `DestructivePool` and `BoxPool` use this to exclude drawn items in O(log n) rather than
-rebuilding the entire selector — reducing total draw-all cost from O(n²) to O(n log n).
+**FenwickTreeSelector / FenwickSelectorBundleFactory**
+`FenwickSelectorBundleFactory` (the default for `BoxPool`) pairs a `FenwickTreeSelector` with a
+`FenwickSelectorBuilder`. The builder calls `update(index, 0)` in O(log n) when an item is exhausted,
+avoiding a full O(n) selector rebuild — reducing total draw-all cost from O(n²) to O(n log n).
 
-| N    | PrefixSum (µs/item) | Fenwick (µs/item) | Speedup |
-|------|--------------------:|------------------:|--------:|
-|  100 |              ~1.6   |             ~0.7  |    ~2x  |
-|  500 |              ~4.9   |             ~0.7  |    ~7x  |
-| 1000 |              ~9.3   |             ~0.8  |   ~12x  |
-| 5000 |             ~45.0   |             ~0.9  |   ~48x  |
+| N    | RebuildBuilder (µs/item) | FenwickBuilder (µs/item) | Speedup |
+|------|-------------------------:|-------------------------:|--------:|
+|  100 |                   ~3.3   |                   ~0.9   |   ~3.5x |
+|  500 |                  ~11.4   |                   ~1.4   |   ~8.2x |
+| 1000 |                  ~21.3   |                   ~1.9   |  ~11.1x |
+| 5000 |                 ~100.1   |                   ~6.0   |  ~16.8x |
 
-Use `FenwickTreeSelector` for `DestructivePool` / `BoxPool` when N ≥ 500.
+Use `FenwickSelectorBundleFactory` for `BoxPool` when N ≥ 500.
 For immutable `WeightedPool`, `FenwickTreeSelector` pick is slightly slower than `PrefixSumSelector`
 (Fenwick tree descent has more overhead than binary search on a sorted prefix-sum array) — use
 `PrefixSumSelector` or `AliasTableSelector` for immutable pools.
@@ -391,24 +390,24 @@ For immutable `WeightedPool`, `FenwickTreeSelector` pick is slightly slower than
 
 ```
 Items   PrefixSum O(log n)   Fenwick O(log n)   Alias O(1)
-    10         ~0.200 µs          ~0.209 µs      ~0.104 µs
-    50         ~0.260 µs          ~0.289 µs      ~0.107 µs
-   100         ~0.287 µs          ~0.321 µs      ~0.106 µs
-   500         ~0.332 µs          ~0.385 µs      ~0.105 µs
-  1000         ~0.355 µs          ~0.415 µs      ~0.107 µs
-  5000         ~0.396 µs          ~0.516 µs      ~0.112 µs
- 50000         ~0.480 µs          ~0.660 µs      ~0.115 µs
+    10         ~0.138 µs          ~0.139 µs      ~0.102 µs
+    50         ~0.170 µs          ~0.173 µs      ~0.106 µs
+   100         ~0.200 µs          ~0.217 µs      ~0.110 µs
+   500         ~0.350 µs          ~0.401 µs      ~0.111 µs
+  1000         ~0.366 µs          ~0.436 µs      ~0.110 µs
+  5000         ~0.430 µs          ~0.532 µs      ~0.112 µs
+ 50000         ~0.517 µs          ~0.680 µs      ~0.119 µs
 ```
 
 Alias throughput stays nearly constant regardless of item count (true O(1)).
 PrefixSum and Fenwick grow as O(log n). For immutable pools, PrefixSum is faster than Fenwick.
-Run `php benchmark/compare.php` for full break-even analysis and DestructivePool scaling charts.
+Run `php benchmark/compare.php` for full break-even analysis and BoxPool scaling charts.
 
-### Accuracy comparison — max deviation over 100,000 draws (equal weights, seed=42)
+### Accuracy comparison — max deviation (N×500 draws, uniform weights, seed=99)
 
 ```
 N      PrefixSum    Fenwick      Alias
-   10    ~1.06%      ~1.06%     ~1.12%
+   50    ~0.22%      ~0.22%     ~0.24%
   100    ~0.13%      ~0.13%     ~0.15%
  1000    ~0.02%      ~0.02%     ~0.02%
 ```
@@ -424,15 +423,15 @@ not algorithmic error. Neither algorithm can produce a result with zero probabil
 
 ```
 Item        Draws    Actual%  Expected%     Diff
-SSR         10034     1.003%     1.000%   +0.003%
-SR          90107     9.011%     9.000%   +0.011%
-R          899859    89.986%    90.000%   -0.014%
+SSR         10042     1.004%     1.000%   +0.004%
+SR          89893     8.989%     9.000%   -0.011%
+R          900065    90.007%    90.000%   +0.007%
 ```
 
 **WeightedPool — 100 items (weight 1–100), 1,000,000 draws**
 
 ```
-Max deviation: ~0.024%   (no item deviated by more than 0.5 percentage points)
+Max deviation: ~0.026%   (no item deviated by more than 0.5 percentage points)
 ```
 
 Run the full benchmark:

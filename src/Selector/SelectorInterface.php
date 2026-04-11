@@ -9,26 +9,17 @@ use WeightedSample\Randomizer\RandomizerInterface;
 /**
  * Weighted index selector.
  *
- * Two implementations are provided:
+ * Three implementations are provided:
  *
- *   PrefixSumSelector  — default. O(n) build, O(log n) pick. Integer-only.
- *                        Good default for small to medium item sets.
+ *   PrefixSumSelector  — O(n) build, O(log n) pick. Good default.
+ *   AliasTableSelector — O(n) build, O(1) pick. Prefer for large immutable pools.
+ *   FenwickTreeSelector — O(n) build, O(log n) pick. Supports in-place weight updates; prefer for BoxPool via FenwickSelectorBundleFactory.
  *
- *   AliasTableSelector — O(n) build, O(1) pick. Integer only.
- *                        Prefer for large item sets (≥ ~50) with frequent draws.
- *
- * Inject via the `selectorClass` parameter on WeightedPool::of(),
- * DestructivePool::of(), or BoxPool::of().
+ * Construct via SelectorFactoryInterface (WeightedPool) or
+ * SelectorBundleFactoryInterface (BoxPool) — do not call build() directly.
  */
 interface SelectorInterface
 {
-    /**
-     * Build a selector from a list of positive integer weights.
-     *
-     * @param list<int> $weights
-     */
-    public static function build(array $weights): static;
-
     /**
      * Pick one index from [0, n) using the given randomizer.
      */

@@ -10,7 +10,6 @@ use WeightedSample\Randomizer\RandomizerInterface;
 use WeightedSample\Randomizer\SeededRandomizer;
 use WeightedSample\Selector\FenwickTreeSelector;
 use WeightedSample\Selector\SelectorInterface;
-use WeightedSample\Selector\UpdatableSelectorInterface;
 
 class FenwickTreeSelectorTest extends TestCase
 {
@@ -25,15 +24,6 @@ class FenwickTreeSelectorTest extends TestCase
 
         // Assert
         $this->assertInstanceOf(SelectorInterface::class, $selector, 'FenwickTreeSelector が SelectorInterface を実装していること');
-    }
-
-    public function test_implements_updatable_selector_interface(): void
-    {
-        // Arrange & Act
-        $selector = FenwickTreeSelector::build([10, 90]);
-
-        // Assert
-        $this->assertInstanceOf(UpdatableSelectorInterface::class, $selector, 'FenwickTreeSelector が UpdatableSelectorInterface を実装していること');
     }
 
     // -------------------------------------------------------------------------

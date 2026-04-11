@@ -5,11 +5,10 @@ declare(strict_types=1);
 require_once __DIR__ . '/../vendor/autoload.php';
 
 use WeightedSample\Pool\BoxPool;
-use WeightedSample\Pool\DestructivePool;
 use WeightedSample\Pool\WeightedPool;
 use WeightedSample\Randomizer\SeededRandomizer;
-use WeightedSample\Selector\AliasTableSelector;
-use WeightedSample\Selector\PrefixSumSelector;
+use WeightedSample\Selector\AliasTableSelectorFactory;
+use WeightedSample\Selector\PrefixSumSelectorFactory;
 
 const DRAWS = 1_000_000;
 
@@ -104,27 +103,27 @@ printResult(
 );
 
 // ---------------------------------------------------------------------------
-// DestructivePool — 3 items, draw all
+// BoxPool — first-draw distribution (equivalent to former DestructivePool)
 // ---------------------------------------------------------------------------
 
-$destructiveItems = [
+$boxFirstItems = [
     ['name' => 'Gold',   'weight' => 10],
     ['name' => 'Silver', 'weight' => 30],
     ['name' => 'Bronze', 'weight' => 60],
 ];
 
-$destructiveCounts = ['Gold' => 0, 'Silver' => 0, 'Bronze' => 0];
-$trials            = 100_000;
+$boxFirstCounts = ['Gold' => 0, 'Silver' => 0, 'Bronze' => 0];
+$trials         = 100_000;
 
 for ($trial = 0; $trial < $trials; $trial++) {
-    $pool      = DestructivePool::of($destructiveItems, fn (array $item) => $item['weight']);
+    $pool      = BoxPool::of($boxFirstItems, fn (array $item) => $item['weight'], fn (array $item) => 1);
     $firstDraw = $pool->draw();
-    $destructiveCounts[$firstDraw['name']]++;
+    $boxFirstCounts[$firstDraw['name']]++;
 }
 
 printResult(
-    "DestructivePool — {$trials} trials, first draw distribution (Gold=10%, Silver=30%, Bronze=60%)",
-    $destructiveCounts,
+    "BoxPool (count=1) — {$trials} trials, first draw distribution (Gold=10%, Silver=30%, Bronze=60%)",
+    $boxFirstCounts,
     ['Gold' => 10, 'Silver' => 30, 'Bronze' => 60],
 );
 
@@ -178,14 +177,17 @@ printf("%-26s %20s %20s\n", '', 'PrefixSum (integer)', 'Alias (float internal)')
 printf("%-26s %20s %20s\n", 'Case', 'Max deviation', 'Max deviation');
 echo str_repeat('-', 68) . "\n";
 
+$prefixSelectorFactory = new PrefixSumSelectorFactory();
+$aliasSelectorFactory  = new AliasTableSelectorFactory();
+
 foreach ($fractionalCases as $title => $case) {
     $weights     = $case['weights'];
     $labels      = $case['labels'];
     $totalWeight = array_sum($weights);
     $indices     = array_keys($labels);
 
-    foreach (['prefix' => PrefixSumSelector::class, 'alias' => AliasTableSelector::class] as $name => $selectorClass) {
-        $pool   = WeightedPool::of($indices, fn (int $index) => $weights[$index], randomizer: new SeededRandomizer(42), selectorClass: $selectorClass);
+    foreach (['prefix' => $prefixSelectorFactory, 'alias' => $aliasSelectorFactory] as $name => $selectorFactory) {
+        $pool   = WeightedPool::of($indices, fn (int $index) => $weights[$index], randomizer: new SeededRandomizer(42), selectorFactory: $selectorFactory);
         $counts = array_fill(0, count($weights), 0);
 
         for ($i = 0; $i < $fractionalDraws; $i++) {
@@ -270,11 +272,14 @@ echo "\n=== Speed comparison: PrefixSumSelector vs AliasTableSelector ({$speedDr
 printf("%-12s %22s %22s %10s\n", 'Items', 'PrefixSum O(log n)', 'Alias O(1)', 'Ratio');
 echo str_repeat('-', 70) . "\n";
 
+$pFactory = new PrefixSumSelectorFactory();
+$aFactory = new AliasTableSelectorFactory();
+
 foreach ([10, 50, 100, 200, 500, 1000] as $itemCount) {
     $weights = range(1, $itemCount);
 
-    $prefixSelector = PrefixSumSelector::build($weights);
-    $aliasSelector  = AliasTableSelector::build($weights);
+    $prefixSelector = $pFactory->create($weights);
+    $aliasSelector  = $aFactory->create($weights);
 
     $prefixRandomizer = new SeededRandomizer(42);
     $prefixStart      = hrtime(true);

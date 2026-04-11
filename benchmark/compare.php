@@ -11,18 +11,24 @@ declare(strict_types=1);
  *   Accuracy weights    : array_fill(0, N, 1) — uniform, expected value = 1/N
  *   Heatmap: break-even draw count (PrefixSum vs Alias) per N
  *
- * Part 2: DestructivePool scaling — PrefixSum O(n²) vs FenwickTree O(n log n)
+ * Part 2: BoxPool scaling — RebuildBuilder O(n²) vs FenwickBuilder O(n log n)
  *   Total draw-all time as N grows — shows asymptotic advantage of FenwickTree
  */
 
 require_once __DIR__ . '/../vendor/autoload.php';
 
-use WeightedSample\Pool\DestructivePool;
+use WeightedSample\Builder\FenwickSelectorBundleFactory;
+use WeightedSample\Builder\RebuildSelectorBundleFactory;
+use WeightedSample\Pool\BoxPool;
 use WeightedSample\Pool\WeightedPool;
 use WeightedSample\Randomizer\SeededRandomizer;
 use WeightedSample\Selector\AliasTableSelector;
+use WeightedSample\Selector\AliasTableSelectorFactory;
 use WeightedSample\Selector\FenwickTreeSelector;
+use WeightedSample\Selector\FenwickTreeSelectorFactory;
 use WeightedSample\Selector\PrefixSumSelector;
+use WeightedSample\Selector\PrefixSumSelectorFactory;
+use WeightedSample\SelectorFactoryInterface;
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -38,8 +44,8 @@ const ACCURACY_DRAWS_PER_ITEM = 500;
 const HEATMAP_DRAWS = [1, 2, 3, 5, 7, 10, 15, 20, 30, 50, 75, 100, 150, 200,
                         300, 500, 750, 1000, 2000, 5000, 10000, 50000, 100000];
 
-/** N values for DestructivePool scaling benchmark */
-const DESTRUCTIVE_N = [10, 50, 100, 250, 500, 1000, 2500, 5000];
+/** N values for BoxPool scaling benchmark */
+const BOX_N = [10, 50, 100, 250, 500, 1000, 2500, 5000];
 
 function buildTrials(int $n): int
 {
@@ -51,7 +57,7 @@ function buildTrials(int $n): int
     };
 }
 
-function destructiveTrials(int $n): int
+function boxTrials(int $n): int
 {
     return match (true) {
         $n <= 100  => 200,
@@ -74,22 +80,22 @@ function measureMs(callable $callable): float
 }
 
 /** @param list<int> $weights */
-function buildPool(array $weights, string $selectorClass): WeightedPool
+function buildPool(array $weights, SelectorFactoryInterface $selectorFactory): WeightedPool
 {
     return WeightedPool::of(
         $weights,
         fn (int $w): int => $w,
-        selectorClass: $selectorClass,
+        selectorFactory: $selectorFactory,
         randomizer: new SeededRandomizer(42),
     );
 }
 
 /** @param list<int> $weights */
-function measureAccuracy(array $weights, string $selectorClass): float
+function measureAccuracy(array $weights, SelectorFactoryInterface $selectorFactory): float
 {
     $n      = count($weights);
     $draws  = $n * ACCURACY_DRAWS_PER_ITEM;
-    $sel    = $selectorClass::build($weights);
+    $sel    = $selectorFactory->create($weights);
     $rng    = new SeededRandomizer(99);
     $counts = array_fill(0, $n, 0);
     for ($i = 0; $i < $draws; $i++) {
@@ -104,23 +110,22 @@ function measureAccuracy(array $weights, string $selectorClass): float
 }
 
 // ---------------------------------------------------------------------------
-// Part 1: WeightedPool — build / pick / accuracy
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
 // Warm-up: trigger JIT / opcode cache before measurements
 // ---------------------------------------------------------------------------
 
-$_warmWeights = range(1, 100);
-$_warmRng     = new SeededRandomizer(0);
+$_warmWeights        = range(1, 100);
+$_warmRng            = new SeededRandomizer(0);
+$_prefixFactory      = new PrefixSumSelectorFactory();
+$_aliasFactory       = new AliasTableSelectorFactory();
+$_fenwickFactory     = new FenwickTreeSelectorFactory();
 for ($_ = 0; $_ < 500; $_++) {
-    buildPool($_warmWeights, PrefixSumSelector::class);
-    buildPool($_warmWeights, AliasTableSelector::class);
-    PrefixSumSelector::build($_warmWeights)->pick($_warmRng);
-    FenwickTreeSelector::build($_warmWeights)->pick($_warmRng);
-    AliasTableSelector::build($_warmWeights)->pick($_warmRng);
+    buildPool($_warmWeights, $_prefixFactory);
+    buildPool($_warmWeights, $_aliasFactory);
+    $_prefixFactory->create($_warmWeights)->pick($_warmRng);
+    $_fenwickFactory->create($_warmWeights)->pick($_warmRng);
+    $_aliasFactory->create($_warmWeights)->pick($_warmRng);
 }
-unset($_warmWeights, $_warmRng, $_);
+unset($_warmWeights, $_warmRng, $_, $_prefixFactory, $_aliasFactory, $_fenwickFactory);
 
 // ---------------------------------------------------------------------------
 // Part 1: WeightedPool — build / pick / accuracy
@@ -148,26 +153,30 @@ $accFenwick  = [];
 /** @var array<int,float> */
 $accAlias    = [];
 
+$prefixFactory  = new PrefixSumSelectorFactory();
+$aliasFactory   = new AliasTableSelectorFactory();
+$fenwickFactory = new FenwickTreeSelectorFactory();
+
 foreach (ITEM_COUNTS as $n) {
     $perfWeights    = range(1, $n);
     $uniformWeights = array_fill(0, $n, 1);
     $trials         = buildTrials($n);
 
     // Build (PrefixSum only — Alias build is charted separately, Fenwick ≈ PrefixSum)
-    $ms = measureMs(function () use ($perfWeights, $trials): void {
-        for ($i = 0; $i < $trials; $i++) { buildPool($perfWeights, PrefixSumSelector::class); }
+    $ms = measureMs(function () use ($perfWeights, $trials, $prefixFactory): void {
+        for ($i = 0; $i < $trials; $i++) { buildPool($perfWeights, $prefixFactory); }
     });
     $buildPrefix[$n] = round($ms / $trials * 1_000, 4);
 
-    $ms = measureMs(function () use ($perfWeights, $trials): void {
-        for ($i = 0; $i < $trials; $i++) { buildPool($perfWeights, AliasTableSelector::class); }
+    $ms = measureMs(function () use ($perfWeights, $trials, $aliasFactory): void {
+        for ($i = 0; $i < $trials; $i++) { buildPool($perfWeights, $aliasFactory); }
     });
     $buildAlias[$n] = round($ms / $trials * 1_000, 4);
 
-    // Pick
-    $selPrefix  = PrefixSumSelector::build($perfWeights);
-    $selFenwick = FenwickTreeSelector::build($perfWeights);
-    $selAlias   = AliasTableSelector::build($perfWeights);
+    // Pick — use selector instances directly for raw throughput
+    $selPrefix  = $prefixFactory->create($perfWeights);
+    $selFenwick = $fenwickFactory->create($perfWeights);
+    $selAlias   = $aliasFactory->create($perfWeights);
 
     // Seed 42: arbitrary fixed value for reproducibility across runs. NOT for production use.
     $rng = new SeededRandomizer(42);
@@ -190,9 +199,9 @@ foreach (ITEM_COUNTS as $n) {
 
     // Accuracy: seed 99 (differs from pick seed 42 to avoid accidental correlation).
     // Uniform weights — expected pick rate = 1/N for every index.
-    $accPrefix[$n]  = round(measureAccuracy($uniformWeights, PrefixSumSelector::class), 6);
-    $accFenwick[$n] = round(measureAccuracy($uniformWeights, FenwickTreeSelector::class), 6);
-    $accAlias[$n]   = round(measureAccuracy($uniformWeights, AliasTableSelector::class), 6);
+    $accPrefix[$n]  = round(measureAccuracy($uniformWeights, $prefixFactory), 6);
+    $accFenwick[$n] = round(measureAccuracy($uniformWeights, $fenwickFactory), 6);
+    $accAlias[$n]   = round(measureAccuracy($uniformWeights, $aliasFactory), 6);
 
     printf("N=%-5d | %8.4fµs | %8.4fµs | %8.4fµs | %8.4fµs | %8.4fµs | %7.4f | %7.4f | %7.4f\n",
         $n,
@@ -203,43 +212,58 @@ foreach (ITEM_COUNTS as $n) {
 }
 
 // ---------------------------------------------------------------------------
-// Part 2: DestructivePool scaling
+// Part 2: BoxPool scaling
 // ---------------------------------------------------------------------------
 
-echo "\nPart 2: DestructivePool scaling (draw-all time µs/item)...\n";
-printf("%-7s | %-16s | %-16s | %-10s\n", 'N', 'PrefixSum µs/item', 'Fenwick µs/item', 'Speedup');
-echo str_repeat('-', 58) . "\n";
+echo "\nPart 2: BoxPool scaling (draw-all time µs/item)...\n";
+printf("%-7s | %-20s | %-20s | %-10s\n", 'N', 'RebuildBuilder µs/item', 'FenwickBuilder µs/item', 'Speedup');
+echo str_repeat('-', 65) . "\n";
 
 /** @var array<int,float> */
-$destructivePrefix  = [];
+$boxRebuild = [];
 /** @var array<int,float> */
-$destructiveFenwick = [];
+$boxFenwick = [];
 
-foreach (DESTRUCTIVE_N as $n) {
+$rebuildBundleFactory = new RebuildSelectorBundleFactory($prefixFactory);
+$fenwickBundleFactory = new FenwickSelectorBundleFactory();
+
+foreach (BOX_N as $n) {
     $items  = range(1, $n);
-    $trials = destructiveTrials($n);
+    $trials = boxTrials($n);
 
-    $msP = measureMs(function () use ($items, $trials): void {
+    $msR = measureMs(function () use ($items, $trials, $rebuildBundleFactory): void {
         for ($t = 0; $t < $trials; $t++) {
-            $pool = DestructivePool::of($items, fn (int $w): int => $w, selectorClass: PrefixSumSelector::class, randomizer: new SeededRandomizer($t));
+            $pool = BoxPool::of(
+                $items,
+                fn (int $w): int => $w,
+                fn (int $w): int => 1,
+                bundleFactory: $rebuildBundleFactory,
+                randomizer: new SeededRandomizer($t),
+            );
             while (! $pool->isEmpty()) { $pool->draw(); }
         }
     });
 
-    $msF = measureMs(function () use ($items, $trials): void {
+    $msF = measureMs(function () use ($items, $trials, $fenwickBundleFactory): void {
         for ($t = 0; $t < $trials; $t++) {
-            $pool = DestructivePool::of($items, fn (int $w): int => $w, selectorClass: FenwickTreeSelector::class, randomizer: new SeededRandomizer($t));
+            $pool = BoxPool::of(
+                $items,
+                fn (int $w): int => $w,
+                fn (int $w): int => 1,
+                bundleFactory: $fenwickBundleFactory,
+                randomizer: new SeededRandomizer($t),
+            );
             while (! $pool->isEmpty()) { $pool->draw(); }
         }
     });
 
-    $totalDraws                = $trials * $n;
-    $destructivePrefix[$n]     = round($msP / $totalDraws * 1_000, 4);
-    $destructiveFenwick[$n]    = round($msF / $totalDraws * 1_000, 4);
-    $speedup                   = $msF > 0 ? round($msP / $msF, 2) : 0.0;
+    $totalDraws       = $trials * $n;
+    $boxRebuild[$n]   = round($msR / $totalDraws * 1_000, 4);
+    $boxFenwick[$n]   = round($msF / $totalDraws * 1_000, 4);
+    $speedup          = $msF > 0 ? round($msR / $msF, 2) : 0.0;
 
-    printf("N=%-5d | %13.4f µs | %13.4f µs | %8.2fx\n",
-        $n, $destructivePrefix[$n], $destructiveFenwick[$n], $speedup);
+    printf("N=%-5d | %17.4f µs | %17.4f µs | %8.2fx\n",
+        $n, $boxRebuild[$n], $boxFenwick[$n], $speedup);
 }
 
 // ---------------------------------------------------------------------------
@@ -314,49 +338,49 @@ foreach (ITEM_COUNTS as $n) {
 }
 $breakEvenHtml .= '</tr></tbody></table>';
 
-// DestructivePool speedup table
-$destructiveTableHtml = '<table class="hmap"><thead><tr><th>N</th>';
-foreach (DESTRUCTIVE_N as $n) { $destructiveTableHtml .= "<th>{$n}</th>"; }
-$destructiveTableHtml .= '</tr></thead><tbody>';
-$destructiveTableHtml .= '<tr><td class="draws-label">PrefixSum µs/item</td>';
-foreach (DESTRUCTIVE_N as $n) {
-    $destructiveTableHtml .= "<td style='background:#1e3a5f;color:#93c5fd;text-align:center'>{$destructivePrefix[$n]}</td>";
+// BoxPool scaling table
+$boxTableHtml = '<table class="hmap"><thead><tr><th>N</th>';
+foreach (BOX_N as $n) { $boxTableHtml .= "<th>{$n}</th>"; }
+$boxTableHtml .= '</tr></thead><tbody>';
+$boxTableHtml .= '<tr><td class="draws-label">RebuildBuilder µs/item</td>';
+foreach (BOX_N as $n) {
+    $boxTableHtml .= "<td style='background:#1e3a5f;color:#93c5fd;text-align:center'>{$boxRebuild[$n]}</td>";
 }
-$destructiveTableHtml .= '</tr><tr><td class="draws-label">Fenwick µs/item</td>';
-foreach (DESTRUCTIVE_N as $n) {
-    $destructiveTableHtml .= "<td style='background:#064e3b;color:#6ee7b7;text-align:center'>{$destructiveFenwick[$n]}</td>";
+$boxTableHtml .= '</tr><tr><td class="draws-label">FenwickBuilder µs/item</td>';
+foreach (BOX_N as $n) {
+    $boxTableHtml .= "<td style='background:#064e3b;color:#6ee7b7;text-align:center'>{$boxFenwick[$n]}</td>";
 }
-$destructiveTableHtml .= '</tr><tr><td class="draws-label">Speedup (F/P)</td>';
-foreach (DESTRUCTIVE_N as $n) {
-    $speedup = $destructiveFenwick[$n] > 0 ? round($destructivePrefix[$n] / $destructiveFenwick[$n], 1) : 0.0;
+$boxTableHtml .= '</tr><tr><td class="draws-label">Speedup (R/F)</td>';
+foreach (BOX_N as $n) {
+    $speedup = $boxFenwick[$n] > 0 ? round($boxRebuild[$n] / $boxFenwick[$n], 1) : 0.0;
     $color   = $speedup >= 2.0 ? '#fbbf24' : '#94a3b8';
-    $destructiveTableHtml .= "<td style='background:#1e293b;color:{$color};font-weight:600;text-align:center'>{$speedup}x</td>";
+    $boxTableHtml .= "<td style='background:#1e293b;color:{$color};font-weight:600;text-align:center'>{$speedup}x</td>";
 }
-$destructiveTableHtml .= '</tr></tbody></table>';
+$boxTableHtml .= '</tr></tbody></table>';
 
 // ---------------------------------------------------------------------------
 // JSON for Chart.js
 // ---------------------------------------------------------------------------
 
 // JSON_THROW_ON_ERROR ensures encoding failures surface immediately rather than silently producing null.
-$labelsJson             = json_encode(ITEM_COUNTS,                    JSON_THROW_ON_ERROR);
-$destructiveLabelsJson  = json_encode(DESTRUCTIVE_N,                  JSON_THROW_ON_ERROR);
-$buildPrefixJson        = json_encode(array_values($buildPrefix),     JSON_THROW_ON_ERROR);
-$buildAliasJson         = json_encode(array_values($buildAlias),      JSON_THROW_ON_ERROR);
-$pickPrefixJson         = json_encode(array_values($pickPrefix),      JSON_THROW_ON_ERROR);
-$pickFenwickJson        = json_encode(array_values($pickFenwick),     JSON_THROW_ON_ERROR);
-$pickAliasJson          = json_encode(array_values($pickAlias),       JSON_THROW_ON_ERROR);
-$accPrefixJson          = json_encode(array_values($accPrefix),       JSON_THROW_ON_ERROR);
-$accFenwickJson         = json_encode(array_values($accFenwick),      JSON_THROW_ON_ERROR);
-$accAliasJson           = json_encode(array_values($accAlias),        JSON_THROW_ON_ERROR);
+$labelsJson        = json_encode(ITEM_COUNTS,               JSON_THROW_ON_ERROR);
+$boxLabelsJson     = json_encode(BOX_N,                     JSON_THROW_ON_ERROR);
+$buildPrefixJson   = json_encode(array_values($buildPrefix), JSON_THROW_ON_ERROR);
+$buildAliasJson    = json_encode(array_values($buildAlias),  JSON_THROW_ON_ERROR);
+$pickPrefixJson    = json_encode(array_values($pickPrefix),  JSON_THROW_ON_ERROR);
+$pickFenwickJson   = json_encode(array_values($pickFenwick), JSON_THROW_ON_ERROR);
+$pickAliasJson     = json_encode(array_values($pickAlias),   JSON_THROW_ON_ERROR);
+$accPrefixJson     = json_encode(array_values($accPrefix),   JSON_THROW_ON_ERROR);
+$accFenwickJson    = json_encode(array_values($accFenwick),  JSON_THROW_ON_ERROR);
+$accAliasJson      = json_encode(array_values($accAlias),    JSON_THROW_ON_ERROR);
 // 3σ upper bound: approximate single-test threshold. Multiple selectors (×3) mean the true
 // family-wise bound is slightly higher (Bonferroni: ×√3 ≈ ×1.73), but for visual guidance this is sufficient.
-$expectedMaxDevJson     = json_encode(array_map(
+$expectedMaxDevJson = json_encode(array_map(
     fn (int $n) => round(3 * sqrt(1.0 / ($n * ACCURACY_DRAWS_PER_ITEM)) * 100, 6),
     ITEM_COUNTS,
-),                                                                     JSON_THROW_ON_ERROR);
-$destructivePrefixJson  = json_encode(array_values($destructivePrefix),  JSON_THROW_ON_ERROR);
-$destructiveFenwickJson = json_encode(array_values($destructiveFenwick), JSON_THROW_ON_ERROR);
+),                                                           JSON_THROW_ON_ERROR);
+$boxRebuildJson    = json_encode(array_values($boxRebuild),  JSON_THROW_ON_ERROR);
+$boxFenwickJson    = json_encode(array_values($boxFenwick),  JSON_THROW_ON_ERROR);
 
 $accDrawsPerItem = ACCURACY_DRAWS_PER_ITEM;
 
@@ -408,7 +432,7 @@ canvas { max-height: 240px; }
   <h1>Selector Comparison — PrefixSum / Fenwick / Alias</h1>
   <p>
     <b>Part 1</b>: WeightedPool（immutable）— build / pick 速度 + 精度。重み: range(1,N)、精度: equal weights × {$accDrawsPerItem} draws/item<br>
-    <b>Part 2</b>: DestructivePool scaling — PrefixSum O(n²) vs FenwickTree O(n log n)（n アイテムを全部引き切るまでの合計時間）
+    <b>Part 2</b>: BoxPool scaling — RebuildBuilder O(n²) vs FenwickBuilder O(n log n)（n アイテムを全部引き切るまでの合計時間）
   </p>
 </div>
 
@@ -429,7 +453,7 @@ canvas { max-height: 240px; }
       <b>FenwickTree は WeightedPool では常に PrefixSum より遅い</b>ため、選択肢に入りません。<br>
       FenwickTree の強みは <code>update()</code> による O(log n) 点更新ですが、WeightedPool（immutable）では draw のたびにセレクタを更新しません。<br>
       結果として pick のオーバーヘッドだけが残り、PrefixSum より常に遅くなります（上の Pick chart 参照）。<br>
-      <b>FenwickTree が有効なのは DestructivePool / BoxPool（mutable pool）のみ</b>です — Part 2 参照。
+      <b>FenwickTree が有効なのは BoxPool（mutable pool）のみ</b>です — Part 2 参照。
     </p>
   </div>
   <h3>損益分岐点（WeightedPool — PrefixSum vs Alias）</h3>
@@ -464,29 +488,29 @@ canvas { max-height: 240px; }
 
 <hr class="divider">
 
-<!-- ===== Part 2: DestructivePool scaling ===== -->
+<!-- ===== Part 2: BoxPool scaling ===== -->
 <div class="section">
   <div style="background:#1c0a00;border:1px solid #92400e;border-radius:.7rem;padding:1rem;margin-bottom:1.2rem">
-    <h2 style="color:#fdba74;margin-bottom:.55rem">FenwickTree の真価 — DestructivePool スケーリング</h2>
+    <h2 style="color:#fdba74;margin-bottom:.55rem">FenwickBuilder の真価 — BoxPool スケーリング</h2>
     <p style="font-size:.82rem;line-height:1.8;color:#fde68a">
-      PrefixSum は draw のたびにセレクタを <b>全再構築 O(n)</b> → 全アイテムを引き切るまで <b>O(n²) 合計</b>。<br>
-      FenwickTree は draw のたびに <b>点更新 O(log n)</b> → 全アイテムを引き切るまで <b>O(n log n) 合計</b>。<br>
+      RebuildBuilder は draw のたびにセレクタを <b>全再構築 O(n)</b> → 全アイテムを引き切るまで <b>O(n²) 合計</b>。<br>
+      FenwickBuilder は draw のたびに <b>点更新 O(log n)</b> → 全アイテムを引き切るまで <b>O(n log n) 合計</b>。<br>
       N が大きくなるほど差が開きます。
     </p>
   </div>
-  <h3>DestructivePool — draw-all time (µs/item) vs N</h3>
-  {$destructiveTableHtml}
+  <h3>BoxPool — draw-all time (µs/item) vs N</h3>
+  {$boxTableHtml}
   <p class="note" style="margin-top:.5rem">
-    µs/item = 全アイテムを引き切るまでの合計時間 ÷ N。PrefixSum は N とともに増加（O(n)）、FenwickTree はほぼ一定（O(log n)）。
+    µs/item = 全アイテムを引き切るまでの合計時間 ÷ N。RebuildBuilder は N とともに増加（O(n)）、FenwickBuilder はほぼ一定（O(log n)）。
   </p>
 </div>
 
 <div class="section">
   <div class="grid">
     <div class="card wide">
-      <h2>DestructivePool draw-all — µs/item vs N（片対数グラフ）</h2>
-      <canvas id="destructiveChart"></canvas>
-      <p class="note">縦軸を対数スケールにすると成長率の違いが明確に見える。PrefixSum は N に比例、FenwickTree はほぼ横ばい。</p>
+      <h2>BoxPool draw-all — µs/item vs N（片対数グラフ）</h2>
+      <canvas id="boxChart"></canvas>
+      <p class="note">縦軸を対数スケールにすると成長率の違いが明確に見える。RebuildBuilder は N に比例、FenwickBuilder はほぼ横ばい。</p>
     </div>
   </div>
 </div>
@@ -508,14 +532,14 @@ canvas { max-height: 240px; }
         <td>build が速く pick も十分高速。典型ガチャはこちら</td>
       </tr>
       <tr>
-        <td>DestructivePool / BoxPool — N ≦ 100 程度</td>
+        <td>BoxPool — N ≦ 100 程度</td>
         <td><span class="p">PrefixSum</span></td>
-        <td>小規模では再構築コストが小さく FenwickTree のオーバーヘッドが勝る</td>
+        <td>小規模では再構築コストが小さく FenwickBuilder のオーバーヘッドが勝る</td>
       </tr>
       <tr>
-        <td>DestructivePool / BoxPool — N ≧ 500</td>
+        <td>BoxPool — N ≧ 500</td>
         <td><span class="f">Fenwick</span></td>
-        <td>全引き O(n log n) vs O(n²)。N=1000 で約 12x、N=5000 で約 50x 速い</td>
+        <td>全引き O(n log n) vs O(n²)。N=1000 で大幅な差が生まれる</td>
       </tr>
       <tr>
         <td>精度最優先</td>
@@ -528,7 +552,7 @@ canvas { max-height: 240px; }
 
 <script>
 const labels      = {$labelsJson};
-const dLabels     = {$destructiveLabelsJson};
+const dLabels     = {$boxLabelsJson};
 const BASE = {
   responsive: true,
   plugins: { legend: { labels: { color:'#94a3b8', boxWidth:13, font:{size:10} } } },
@@ -560,9 +584,9 @@ new Chart(document.getElementById('accChart'), { type:'line', data:{ labels, dat
   {label:'3σ upper bound', data:{$expectedMaxDevJson},  borderColor:'#475569', backgroundColor:'transparent', borderDash:[4,4], tension:.3, pointRadius:0},
 ]}, options: opt('max deviation (%)') });
 
-new Chart(document.getElementById('destructiveChart'), { type:'line', data:{ labels: dLabels, datasets:[
-  {label:'PrefixSum O(n²)',      data:{$destructivePrefixJson},  borderColor:'#3b82f6', backgroundColor:'#3b82f622', tension:.3},
-  {label:'FenwickTree O(n logn)', data:{$destructiveFenwickJson}, borderColor:'#f97316', backgroundColor:'#f9731622', tension:.3},
+new Chart(document.getElementById('boxChart'), { type:'line', data:{ labels: dLabels, datasets:[
+  {label:'RebuildBuilder O(n²)',    data:{$boxRebuildJson}, borderColor:'#3b82f6', backgroundColor:'#3b82f622', tension:.3},
+  {label:'FenwickBuilder O(n logn)', data:{$boxFenwickJson}, borderColor:'#f97316', backgroundColor:'#f9731622', tension:.3},
 ]}, options: optLog('µs / item (log scale)') });
 </script>
 </body>
