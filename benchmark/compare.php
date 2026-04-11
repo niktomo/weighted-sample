@@ -237,7 +237,7 @@ foreach (BOX_N as $n) {
                 $items,
                 fn (int $w): int => $w,
                 fn (int $w): int => 1,
-                selectorBundleFactory: $rebuildBundleFactory,
+                bundleFactory: $rebuildBundleFactory,
                 randomizer: new SeededRandomizer($t),
             );
             while (! $pool->isEmpty()) { $pool->draw(); }
@@ -250,7 +250,7 @@ foreach (BOX_N as $n) {
                 $items,
                 fn (int $w): int => $w,
                 fn (int $w): int => 1,
-                selectorBundleFactory: $fenwickBundleFactory,
+                bundleFactory: $fenwickBundleFactory,
                 randomizer: new SeededRandomizer($t),
             );
             while (! $pool->isEmpty()) { $pool->draw(); }

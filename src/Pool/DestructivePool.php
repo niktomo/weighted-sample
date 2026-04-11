@@ -13,6 +13,7 @@ use WeightedSample\Randomizer\SecureRandomizer;
 use WeightedSample\Selector\PrefixSumSelectorFactory;
 use WeightedSample\Selector\SelectorInterface;
 use WeightedSample\SelectorFactoryInterface;
+use InvalidArgumentException;
 
 /**
  * Weighted pool that removes each drawn item.
@@ -118,7 +119,7 @@ final class DestructivePool implements ExhaustiblePoolInterface
     public function drawMany(int $count): array
     {
         if ($count < 0) {
-            throw new \InvalidArgumentException('$count must be non-negative.');
+            throw new InvalidArgumentException('$count must be non-negative.');
         }
 
         $results = [];

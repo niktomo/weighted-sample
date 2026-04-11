@@ -13,6 +13,7 @@ use WeightedSample\Filter\PositiveValueFilter;
 use WeightedSample\Randomizer\RandomizerInterface;
 use WeightedSample\Randomizer\SecureRandomizer;
 use WeightedSample\SelectorBundleFactoryInterface;
+use InvalidArgumentException;
 
 /**
  * Weighted pool where each item has a finite count.
@@ -52,7 +53,7 @@ final class BoxPool implements ExhaustiblePoolInterface
      * @param \Closure(TItem): int                    $weightExtractor
      * @param \Closure(TItem): int                    $countExtractor
      * @param CountedItemFilterInterface<TItem>       $filter
-     * @param SelectorBundleFactoryInterface          $selectorBundleFactory
+     * @param SelectorBundleFactoryInterface          $bundleFactory
      * @param RandomizerInterface                     $randomizer
      * @return self<TItem>
      */
@@ -61,7 +62,7 @@ final class BoxPool implements ExhaustiblePoolInterface
         \Closure $weightExtractor,
         \Closure $countExtractor,
         CountedItemFilterInterface $filter = new PositiveValueFilter(),
-        SelectorBundleFactoryInterface $selectorBundleFactory = new FenwickSelectorBundleFactory(),
+        SelectorBundleFactoryInterface $bundleFactory = new FenwickSelectorBundleFactory(),
         RandomizerInterface $randomizer = new SecureRandomizer(),
     ): self {
         /** @var list<TItem> $filteredItems */
@@ -84,7 +85,7 @@ final class BoxPool implements ExhaustiblePoolInterface
             throw new AllItemsFilteredException('Cannot create a BoxPool: no items remain after filtering.');
         }
 
-        $bundle = $selectorBundleFactory->create($filteredWeights);
+        $bundle = $bundleFactory->create($filteredWeights);
 
         return new self(
             $filteredItems,
@@ -134,7 +135,7 @@ final class BoxPool implements ExhaustiblePoolInterface
     public function drawMany(int $count): array
     {
         if ($count < 0) {
-            throw new \InvalidArgumentException('$count must be non-negative.');
+            throw new InvalidArgumentException('$count must be non-negative.');
         }
 
         $results = [];

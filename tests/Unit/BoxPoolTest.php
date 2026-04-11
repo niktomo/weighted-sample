@@ -216,7 +216,7 @@ class BoxPoolTest extends TestCase
             [['id' => 1, 'weight' => 10, 'count' => 2]],
             fn (array $item) => $item['weight'],
             fn (array $item) => $item['count'],
-            selectorBundleFactory: $factory,
+            bundleFactory: $factory,
         );
 
         // Assert
@@ -238,7 +238,7 @@ class BoxPoolTest extends TestCase
             $items,
             fn (array $item) => $item['weight'],
             fn (array $item) => $item['count'],
-            selectorBundleFactory: new FenwickSelectorBundleFactory(),
+            bundleFactory: new FenwickSelectorBundleFactory(),
             randomizer: $this->fixedRandomizer(0),
         );
 
@@ -266,7 +266,7 @@ class BoxPoolTest extends TestCase
             $items,
             fn (array $item) => $item['weight'],
             fn (array $item) => $item['count'],
-            selectorBundleFactory: new FenwickSelectorBundleFactory(),
+            bundleFactory: new FenwickSelectorBundleFactory(),
             randomizer: $this->fixedRandomizer(0),
         );
 
@@ -286,7 +286,7 @@ class BoxPoolTest extends TestCase
             [['id' => 1, 'weight' => 10, 'count' => 1]],
             fn (array $item) => $item['weight'],
             fn (array $item) => $item['count'],
-            selectorBundleFactory: new FenwickSelectorBundleFactory(),
+            bundleFactory: new FenwickSelectorBundleFactory(),
         );
         $pool->draw();
 
@@ -312,7 +312,7 @@ class BoxPoolTest extends TestCase
             $items,
             fn (array $item) => $item['weight'],
             fn (array $item) => $item['count'],
-            selectorBundleFactory: new RebuildSelectorBundleFactory(),
+            bundleFactory: new RebuildSelectorBundleFactory(),
             randomizer: $this->fixedRandomizer(0),
         );
 
