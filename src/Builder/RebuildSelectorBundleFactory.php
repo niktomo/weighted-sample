@@ -24,13 +24,8 @@ final class RebuildSelectorBundleFactory implements SelectorBundleFactoryInterfa
     /**
      * @param list<int> $weights
      */
-    public function create(array $weights): SelectorBundle
+    public function create(array $weights): SelectorBuilderInterface
     {
-        $builder = new RebuildSelectorBuilder($this->selectorFactory, $weights);
-
-        return new SelectorBundle(
-            selector: $builder->currentSelector(),  // 初期 Selector（Pool 構築時のみ使用）
-            builder:  $builder,
-        );
+        return new RebuildSelectorBuilder($this->selectorFactory, $weights);
     }
 }

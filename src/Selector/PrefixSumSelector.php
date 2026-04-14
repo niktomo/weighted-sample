@@ -14,7 +14,8 @@ use WeightedSample\Randomizer\RandomizerInterface;
  * Pick:  O(log n) — single random call, binary search on prefix sums.
  *
  * Uses integer arithmetic only — no floating-point operations.
- * This is the default selector and is suitable for most use cases.
+ * This is the default selector for WeightedPool and is suitable for most use cases.
+ * BoxPool defaults to FenwickSelectorBundleFactory (O(log n) updates) instead.
  */
 final readonly class PrefixSumSelector implements SelectorInterface
 {
@@ -33,7 +34,7 @@ final readonly class PrefixSumSelector implements SelectorInterface
      */
     public static function build(array $weights): static
     {
-        return new static($weights);
+        return new self($weights);
     }
 
     public function pick(RandomizerInterface $randomizer): int

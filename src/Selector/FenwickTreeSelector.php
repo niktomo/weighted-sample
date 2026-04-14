@@ -6,7 +6,10 @@ namespace WeightedSample\Selector;
 
 use InvalidArgumentException;
 use OverflowException;
+use UnderflowException;
+use WeightedSample\ItemExclusionObserverInterface;
 use WeightedSample\Randomizer\RandomizerInterface;
+use WeightedSample\TotalWeightQueryInterface;
 
 /**
  * Fenwick tree (Binary Indexed Tree) weighted selector with O(log n) updates.
@@ -16,7 +19,7 @@ use WeightedSample\Randomizer\RandomizerInterface;
  * Update: O(log n) — point update propagates through tree.
  *
  * Prefer this selector over PrefixSumSelector when the pool mutates on every
- * draw() (DestructivePool, BoxPool): update() avoids the O(n) full rebuild
+ * draw() (BoxPool): update() avoids the O(n) full rebuild
  * that PrefixSumSelector requires after each removal.
  *
  * For immutable pools (WeightedPool) pick performance equals PrefixSumSelector.
@@ -29,7 +32,7 @@ use WeightedSample\Randomizer\RandomizerInterface;
  *   Descent finds the largest 1-indexed position j where prefixSum(j) ≤ r.
  *   Return j as the 0-indexed answer (the item whose cumulative range contains r).
  */
-final class FenwickTreeSelector implements SelectorInterface
+final class FenwickTreeSelector implements SelectorInterface, ItemExclusionObserverInterface, TotalWeightQueryInterface
 {
     /** @var array<int, int>  1-indexed Fenwick tree; tree[0] is unused (always 0) */
     private array $tree;
@@ -70,13 +73,16 @@ final class FenwickTreeSelector implements SelectorInterface
 
         $this->weights = $weights;
 
-        // Build Fenwick tree in O(n):
-        //   each element pushes its value up to its parent exactly once.
+        // Build Fenwick tree in O(n) using the propagation method:
+        //   For each position $pos (1-indexed), add $weight to tree[$pos],
+        //   then propagate that value to its Fenwick parent ($pos + lowbit($pos)).
+        //   Each element is visited at most O(log n) times as a parent, giving O(n) total.
+        //   Unlike the naive O(n log n) prefix-sum approach, no element is summed twice.
         $tree = array_fill(0, $size + 1, 0);
         foreach ($weights as $i => $weight) {
-            $pos         = $i + 1;               // convert to 1-indexed
+            $pos         = $i + 1;                // convert to 1-indexed
             $tree[$pos] += $weight;
-            $parent      = $pos + ($pos & -$pos); // parent in Fenwick tree
+            $parent      = $pos + ($pos & -$pos); // Fenwick parent: next node that covers $pos
             if ($parent <= $size) {
                 $tree[$parent] += $tree[$pos];
             }
@@ -96,11 +102,15 @@ final class FenwickTreeSelector implements SelectorInterface
      */
     public static function build(array $weights): static
     {
-        return new static($weights);
+        return new self($weights);
     }
 
     public function pick(RandomizerInterface $randomizer): int
     {
+        if ($this->total === 0) {
+            throw new UnderflowException('Cannot pick from a selector with zero total weight.');
+        }
+
         $r       = $randomizer->next($this->total);
         $pos     = 0;
         $bitMask = $this->highBit;
@@ -136,11 +146,49 @@ final class FenwickTreeSelector implements SelectorInterface
         return $pos;
     }
 
+    /**
+     * Updates the weight of the item at $index.
+     *
+     * Pass newWeight=0 to exclude an item from future picks (used by onItemExcluded()).
+     * Calling update(i, 0) on an already-zero weight is a no-op (delta=0).
+     *
+     * @throws \InvalidArgumentException if $index is out of range or $newWeight is negative
+     * @throws \OverflowException        if the resulting total weight would be negative
+     */
     public function update(int $index, int $newWeight): void
     {
-        $delta               = $newWeight - $this->weights[$index];
+        if ($index < 0 || $index >= $this->size) {
+            throw new InvalidArgumentException(
+                "Index {$index} is out of range [0, {$this->size}).",
+            );
+        }
+        if ($newWeight < 0) {
+            throw new InvalidArgumentException(
+                "Weight must be non-negative; {$newWeight} given.",
+            );
+        }
+
+        $delta = $newWeight - $this->weights[$index];
+
+        if ($delta > 0 && $this->total > \PHP_INT_MAX - $delta) {
+            throw new OverflowException(
+                "Total weight would exceed PHP_INT_MAX after update; index={$index}, newWeight={$newWeight}.",
+            );
+        }
+
+        $newTotal = $this->total + $delta;
+
+        if ($newTotal < 0) {
+            throw new OverflowException(
+                "Total weight cannot be negative after update; index={$index}, newWeight={$newWeight}.",
+            );
+        }
+
         $this->weights[$index] = $newWeight;
-        $this->total        += $delta;
+        $this->total           = $newTotal;
+
+        // $this->highBit is not updated here: it depends only on $this->size,
+        // which never changes after construction (update() mutates weights, not size).
 
         // Propagate delta up the Fenwick tree (1-indexed)
         $i = $index + 1;
@@ -153,5 +201,14 @@ final class FenwickTreeSelector implements SelectorInterface
     public function totalWeight(): int
     {
         return $this->total;
+    }
+
+    /**
+     * Observer callback: excludes the item at $index by setting its weight to zero.
+     * Called by FenwickSelectorBuilder when an item's stock reaches zero.
+     */
+    public function onItemExcluded(int $index): void
+    {
+        $this->update($index, 0);
     }
 }

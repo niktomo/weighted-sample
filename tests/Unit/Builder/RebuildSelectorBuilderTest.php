@@ -4,15 +4,18 @@ declare(strict_types=1);
 
 namespace WeightedSample\Tests\Unit\Builder;
 
+use LogicException;
 use PHPUnit\Framework\TestCase;
 use WeightedSample\Builder\RebuildSelectorBuilder;
 use WeightedSample\Builder\SelectorBuilderInterface;
-use WeightedSample\Randomizer\RandomizerInterface;
 use WeightedSample\Randomizer\SeededRandomizer;
 use WeightedSample\Selector\PrefixSumSelectorFactory;
+use WeightedSample\Tests\Support\RandomizerHelpers;
 
 class RebuildSelectorBuilderTest extends TestCase
 {
+    use RandomizerHelpers;
+
     // -------------------------------------------------------------------------
     // インターフェース実装
     // -------------------------------------------------------------------------
@@ -119,20 +122,44 @@ class RebuildSelectorBuilderTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
+    // 不変条件違反
+    // -------------------------------------------------------------------------
+
+    public function test_current_selector_throws_logic_exception_when_all_weights_are_zero(): void
+    {
+        // Arrange — 全アイテムを subtract してから currentSelector() を呼ぶ
+        // Pool は totalWeight() === 0 を確認してから currentSelector() を呼ぶべきであり、
+        // この呼び出しはプログラミングエラーを示す
+        $builder = new RebuildSelectorBuilder(new PrefixSumSelectorFactory(), [10, 20]);
+        $builder->subtract(0);
+        $builder->subtract(1);
+
+        // Act & Assert
+        $this->expectException(LogicException::class);
+        $builder->currentSelector();
+    }
+
+    // -------------------------------------------------------------------------
+    // subtract 冪等性
+    // -------------------------------------------------------------------------
+
+    public function test_subtract_same_index_twice_is_idempotent(): void
+    {
+        // Arrange
+        $builder = new RebuildSelectorBuilder(new PrefixSumSelectorFactory(), [10, 20, 30]);
+        $builder->subtract(1);
+        $selectorAfterFirst = $builder->currentSelector(); // rebuild 済み
+
+        // Act — 同じ index を再度 subtract しても状態が変わらない
+        $builder->subtract(1);
+
+        // Assert — dirty フラグが立たないので currentSelector は同じインスタンスのまま
+        $this->assertSame(40, $builder->totalWeight(), '2 回 subtract しても totalWeight は変わらないこと');
+        $this->assertSame($selectorAfterFirst, $builder->currentSelector(), '2 回 subtract しても不要な rebuild が発生しないこと');
+    }
+
+    // -------------------------------------------------------------------------
     // ヘルパー
     // -------------------------------------------------------------------------
 
-    private function fixedRandomizer(int $value): RandomizerInterface
-    {
-        return new class ($value) implements RandomizerInterface {
-            public function __construct(private readonly int $value)
-            {
-            }
-
-            public function next(int $max): int
-            {
-                return $this->value;
-            }
-        };
-    }
 }

@@ -9,7 +9,11 @@ namespace WeightedSample\Filter;
  *
  * Evaluation is short-circuit: the first filter that returns false stops
  * further evaluation and the item is rejected immediately.
- * Exceptions from inner filters are propagated as-is.
+ * Exceptions from inner filters are propagated as-is without wrapping:
+ *
+ *   $filter = new CompositeFilter([new PositiveValueFilter(), new StrictValueFilter()]);
+ *   // If StrictValueFilter::accepts() throws \RangeException, it bubbles out of
+ *   // CompositeFilter::accepts() directly.
  *
  * Implements CountedItemFilterInterface so it can be used with BoxPool.
  * For inner filters that do not implement CountedItemFilterInterface,

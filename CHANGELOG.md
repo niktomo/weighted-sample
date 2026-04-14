@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-04-12
+
+### Added
+- `TotalWeightQueryInterface` — new interface for querying `totalWeight(): int`; separates read-only weight queries from exclusion notification (ISP). Implemented by `FenwickTreeSelector`.
+
+### Changed
+- **BREAKING** `WeightedPool::of()` and `BoxPool::of()` now throw `InvalidArgumentException` when no items survive the filter at construction time (previously threw `EmptyPoolException`/`AllItemsFilteredException`). Construction failure ("bad input") and runtime exhaustion ("pool ran out") are semantically different, and `InvalidArgumentException` accurately reflects that the caller passed unusable data.
+- **BREAKING** `ItemExclusionObserverInterface` — `totalWeight(): int` removed. Implement `TotalWeightQueryInterface` separately if you need total-weight querying.
+- `FenwickSelectorBuilder` constructor now requires `SelectorInterface & ItemExclusionObserverInterface & TotalWeightQueryInterface` (3-way intersection type).
+- `FenwickTreeSelector` now implements `TotalWeightQueryInterface` in addition to `SelectorInterface` and `ItemExclusionObserverInterface`.
+- `FenwickTreeSelector::update()` — added overflow guard for positive-delta updates; throws `OverflowException` if the new total would exceed `PHP_INT_MAX`.
+- `AliasTableSelector` — improved `OverflowException` message to be more user-friendly.
+
+### Removed
+- **BREAKING** `AllItemsFilteredException` — removed. `WeightedPool::of()` and `BoxPool::of()` now throw `InvalidArgumentException` directly (see Changed above).
+- **BREAKING** `DestructivePool` — removed entirely. Use `BoxPool::of($items, $weightExtractor, fn($item) => 1)` as a drop-in replacement.
+
+### Migration Guide (v2.x → v3.0.0)
+
+**Exception handling for `of()`:**
+
+```php
+// v2.x — catch EmptyPoolException (or AllItemsFilteredException subclass)
+try {
+    $pool = WeightedPool::of($items, fn($item) => $item['weight']);
+} catch (\WeightedSample\Exception\EmptyPoolException $e) { ... }
+
+// v3.0.0 — catch InvalidArgumentException for construction failure
+try {
+    $pool = WeightedPool::of($items, fn($item) => $item['weight']);
+} catch (\InvalidArgumentException $e) { ... }
+```
+
+**DestructivePool replacement:**
+
+```php
+use WeightedSample\Pool\BoxPool;
+
+// v2.x (removed)
+// DestructivePool::of($items, fn(array $item) => $item['weight']);
+
+// v3.0.0 — BoxPool with count=1 per item
+BoxPool::of(
+    $items,
+    fn(array $item) => $item['weight'],
+    fn(array $item) => 1,
+);
+```
+
+`BoxPool` with `fn($item) => 1` is a full drop-in:
+- Each item is drawn at most once.
+- Higher-weight items appear earlier in the sequence on average.
+- `isEmpty()` and `drawMany()` behave identically.
+
 ## [2.0.0] - 2026-04-11
 
 ### Added
@@ -25,7 +79,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **BREAKING** `SelectorInterface` — `static build(array $weights): static` removed; `pick()` is now the only method
 - **BREAKING** `WeightedPool::of()` — `$selectorClass` (`class-string<SelectorInterface>`) replaced by `$selectorFactory` (`SelectorFactoryInterface`); default is `new PrefixSumSelectorFactory()`
-- **BREAKING** `BoxPool::of()` — `$selectorClass` (`class-string<SelectorInterface>`) replaced by `$selectorBundleFactory` (`SelectorBundleFactoryInterface`); default is `new FenwickSelectorBundleFactory()`
+- **BREAKING** `BoxPool::of()` — `$selectorClass` (`class-string<SelectorInterface>`) replaced by `$bundleFactory` (`SelectorBundleFactoryInterface`); default is `new FenwickSelectorBundleFactory()`
 - **BREAKING** `DestructivePool::of()` — `$selectorClass` (`class-string<SelectorInterface>`) replaced by `$selectorFactory` (`SelectorFactoryInterface`); default is `new PrefixSumSelectorFactory()`
 - **BREAKING** `UpdatableSelectorInterface` removed from `WeightedSample\Selector` namespace; `FenwickTreeSelector` no longer implements it — use `FenwickSelectorBundleFactory` instead
 - **BREAKING** `DestructivePool` marked `@deprecated`; use `BoxPool::of($items, $weightFn, fn($item) => 1)` as a drop-in replacement
@@ -36,22 +90,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Migration Guide (v1.x → v2.0.0)
 
 ```php
-// v1.x
+// Before (v1.x)
+use WeightedSample\Pool\BoxPool;
+use WeightedSample\Pool\DestructivePool;
+use WeightedSample\Pool\WeightedPool;
+use WeightedSample\Selector\AliasTableSelector;
+use WeightedSample\Selector\FenwickTreeSelector;
+
 WeightedPool::of($items, $weightFn, selectorClass: AliasTableSelector::class);
 BoxPool::of($items, $weightFn, $countFn, selectorClass: FenwickTreeSelector::class);
+DestructivePool::of($items, $weightFn);
 
-// v2.0.0
-use WeightedSample\Selector\AliasTableSelectorFactory;
+// After (v2.0.0)
 use WeightedSample\Builder\FenwickSelectorBundleFactory;
+use WeightedSample\Pool\BoxPool;
+use WeightedSample\Pool\WeightedPool;
+use WeightedSample\Selector\AliasTableSelectorFactory;
 
 WeightedPool::of($items, $weightFn, selectorFactory: new AliasTableSelectorFactory());
-BoxPool::of($items, $weightFn, $countFn, selectorBundleFactory: new FenwickSelectorBundleFactory());
-
-// DestructivePool → BoxPool
-// v1.x
-DestructivePool::of($items, $weightFn);
-// v2.0.0
-BoxPool::of($items, $weightFn, fn($item) => 1);
+BoxPool::of($items, $weightFn, $countFn, bundleFactory: new FenwickSelectorBundleFactory());
+BoxPool::of($items, $weightFn, fn($item) => 1); // was DestructivePool
 ```
 
 ## [1.1.0] - 2026-04-05
@@ -74,6 +132,7 @@ BoxPool::of($items, $weightFn, fn($item) => 1);
 - `AliasTableSelector::build()` now throws `InvalidArgumentException` for empty weights and weight ≤ 0 (matches `PrefixSumSelector` behavior)
 
 ### Changed
+- `AliasTableSelector`: threshold computation switched from float (`round(p × W)`) to integer-only arithmetic (`n × w[i]`), eliminating float rounding errors; the v1.0.0 safety clamp is no longer needed
 - `SelectorInterface` docblock corrected: pick uses integer-only arithmetic (not float)
 - README: updated speed table to current benchmark values; added break-even guidance clarifying `PrefixSumSelector` as the right default for typical gacha use cases
 - README: documented `CompositeFilter` fallback behavior for filters that do not implement `CountedItemFilterInterface`
@@ -129,3 +188,12 @@ BoxPool::of($items, $weightFn, fn($item) => 1);
 - `SeededRandomizer` — deterministic randomizer; uses `Secure` engine by default, `Mt19937` with a seed
 - `EmptyPoolException` — thrown when drawing from an empty pool or when all items are filtered out
 - Prefix sum + binary search O(log n) selection with integer arithmetic only
+
+[Unreleased]: https://github.com/niktomo/weighted-sample/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/niktomo/weighted-sample/compare/v2.0.0...v3.0.0
+[2.0.0]: https://github.com/niktomo/weighted-sample/compare/v1.1.0...v2.0.0
+[1.1.0]: https://github.com/niktomo/weighted-sample/compare/v1.0.1...v1.1.0
+[1.0.1]: https://github.com/niktomo/weighted-sample/compare/v1.0.0...v1.0.1
+[1.0.0]: https://github.com/niktomo/weighted-sample/compare/v0.2.0...v1.0.0
+[0.2.0]: https://github.com/niktomo/weighted-sample/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/niktomo/weighted-sample/releases/tag/v0.1.0

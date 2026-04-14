@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace WeightedSample\Pool;
 
-use WeightedSample\Exception\AllItemsFilteredException;
+use Closure;
+use InvalidArgumentException;
 use WeightedSample\Filter\ItemFilterInterface;
 use WeightedSample\Filter\PositiveValueFilter;
 use WeightedSample\Randomizer\RandomizerInterface;
@@ -34,15 +35,16 @@ final readonly class WeightedPool implements PoolInterface
     /**
      * @template TItem
      * @param iterable<TItem>                    $items
-     * @param \Closure(TItem): int               $weightExtractor
+     * @param Closure(TItem): int                $weightExtractor
      * @param ItemFilterInterface<TItem>          $filter
      * @param SelectorFactoryInterface            $selectorFactory
      * @param RandomizerInterface                 $randomizer
      * @return self<TItem>
+     * @throws InvalidArgumentException if no items remain after filtering
      */
     public static function of(
         iterable $items,
-        \Closure $weightExtractor,
+        Closure $weightExtractor,
         ItemFilterInterface $filter = new PositiveValueFilter(),
         SelectorFactoryInterface $selectorFactory = new PrefixSumSelectorFactory(),
         RandomizerInterface $randomizer = new SecureRandomizer(),
@@ -60,7 +62,7 @@ final readonly class WeightedPool implements PoolInterface
         }
 
         if ($filteredItems === []) {
-            throw new AllItemsFilteredException('Cannot create a WeightedPool: no items remain after filtering.');
+            throw new InvalidArgumentException('Cannot create a WeightedPool: no items remain after filtering.');
         }
 
         return new self(
@@ -71,6 +73,9 @@ final readonly class WeightedPool implements PoolInterface
     }
 
     /**
+     * Draws one item from the pool according to its weight.
+     * The pool is immutable — repeated draw() calls always select from the full item set.
+     *
      * @return T
      */
     public function draw(): mixed

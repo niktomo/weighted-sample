@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace WeightedSample\Tests\Unit\Filter;
 
+use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
 use WeightedSample\Filter\CompositeFilter;
 use WeightedSample\Filter\CountedItemFilterInterface;
@@ -95,7 +96,7 @@ class CompositeFilterTest extends TestCase
         $filter = new CompositeFilter([new StrictValueFilter()]);
 
         // Assert
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(InvalidArgumentException::class);
 
         // Act
         $filter->accepts('item', 0);

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace WeightedSample\Tests\Unit;
 
+use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
 use WeightedSample\Randomizer\RandomizerInterface;
 use WeightedSample\Randomizer\SeededRandomizer;
@@ -91,5 +92,69 @@ class SeededRandomizerTest extends TestCase
 
         // Assert
         $this->assertSame($firstA, $firstB, 'インスタンスが独立しており、他インスタンスの消費に影響されないこと');
+    }
+
+    public function test_next_throws_on_zero_max(): void
+    {
+        // Arrange
+        $randomizer = new SeededRandomizer(42);
+
+        // Act & Assert
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('max must be greater than 0');
+        $randomizer->next(0);
+    }
+
+    public function test_next_throws_on_negative_max(): void
+    {
+        // Arrange
+        $randomizer = new SeededRandomizer(42);
+
+        // Act & Assert
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('max must be greater than 0');
+        $randomizer->next(-1);
+    }
+
+    public function test_seed_zero_is_valid(): void
+    {
+        // Arrange & Act
+        $randomizer = new SeededRandomizer(0);
+
+        // Assert
+        $this->assertSame(0, $randomizer->next(1), 'seed=0 は有効な最小値であること');
+    }
+
+    public function test_seed_max_uint32_is_valid(): void
+    {
+        // Arrange & Act — 4294967295 = 2^32 - 1 は有効な最大値
+        $randomizer = new SeededRandomizer(4_294_967_295);
+
+        // Assert
+        $this->assertInstanceOf(
+            RandomizerInterface::class,
+            $randomizer,
+            'seed=4294967295 (unsigned 32-bit max) は有効であること',
+        );
+    }
+
+    public function test_negative_seed_throws(): void
+    {
+        // Assert
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Seed must be in [0, 4294967295] (unsigned 32-bit); -1 given.');
+
+        // Act
+        new SeededRandomizer(-1);
+    }
+
+    public function test_seed_exceeding_uint32_throws(): void
+    {
+        // Assert
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Seed must be in [0, 4294967295] (unsigned 32-bit); 4294967296 given.');
+
+        // Act
+        new SeededRandomizer(4_294_967_296);
     }
 }

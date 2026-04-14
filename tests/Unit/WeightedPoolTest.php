@@ -4,17 +4,20 @@ declare(strict_types=1);
 
 namespace WeightedSample\Tests\Unit;
 
+use InvalidArgumentException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
-use WeightedSample\Exception\EmptyPoolException;
 use WeightedSample\Filter\StrictValueFilter;
 use WeightedSample\Pool\PoolInterface;
 use WeightedSample\Pool\WeightedPool;
-use WeightedSample\Randomizer\RandomizerInterface;
 use WeightedSample\Selector\AliasTableSelectorFactory;
 use WeightedSample\SelectorFactoryInterface;
+use WeightedSample\Tests\Support\RandomizerHelpers;
 
 class WeightedPoolTest extends TestCase
 {
+    use RandomizerHelpers;
+
     // -------------------------------------------------------------------------
     // 構築
     // -------------------------------------------------------------------------
@@ -35,7 +38,7 @@ class WeightedPoolTest extends TestCase
     public function test_throws_on_empty_items(): void
     {
         // Assert
-        $this->expectException(EmptyPoolException::class);
+        $this->expectException(InvalidArgumentException::class);
 
         // Act
         WeightedPool::of([], fn (array $item) => $item['weight']);
@@ -62,8 +65,8 @@ class WeightedPoolTest extends TestCase
             ['name' => 'B', 'weight' => 0],
         ];
 
-        // Assert
-        $this->expectException(EmptyPoolException::class);
+        // Assert — 構築時の InvalidArgumentException は実行時の EmptyPoolException と区別されること
+        $this->expectException(InvalidArgumentException::class);
 
         // Act
         WeightedPool::of($items, fn (array $item) => $item['weight']);
@@ -75,7 +78,7 @@ class WeightedPoolTest extends TestCase
         $items = [['name' => 'A', 'weight' => 0]];
 
         // Assert
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(InvalidArgumentException::class);
 
         // Act
         WeightedPool::of($items, fn (array $item) => $item['weight'], filter: new StrictValueFilter());
@@ -85,7 +88,19 @@ class WeightedPoolTest extends TestCase
     // draw() — 決定論的なスタブで検証
     // -------------------------------------------------------------------------
 
-    public function test_draw_returns_first_item_when_rand_is_zero(): void
+    /**
+     * @return array<string, array{int, string}>
+     */
+    public static function drawRandAndExpectedItemProvider(): array
+    {
+        return [
+            'rand=0 → 最初のアイテム (A)'   => [0,  'A'],
+            'rand=99 → 最後のアイテム (B)'  => [99, 'B'],
+        ];
+    }
+
+    #[DataProvider('drawRandAndExpectedItemProvider')]
+    public function test_draw_returns_item_based_on_rand_value(int $randValue, string $expectedName): void
     {
         // Arrange
         $items = [
@@ -95,34 +110,14 @@ class WeightedPoolTest extends TestCase
         $pool = WeightedPool::of(
             $items,
             fn (array $item) => $item['weight'],
-            randomizer: $this->fixedRandomizer(0), // rand=0 → 最初のアイテム
+            randomizer: $this->fixedRandomizer($randValue),
         );
 
         // Act
         $result = $pool->draw();
 
         // Assert
-        $this->assertSame('A', $result['name'], 'rand=0 のとき最初のアイテムが返ること');
-    }
-
-    public function test_draw_returns_last_item_when_rand_is_total_minus_one(): void
-    {
-        // Arrange — total=100, rand=99 → 最後のアイテム
-        $items = [
-            ['name' => 'A', 'weight' => 10],
-            ['name' => 'B', 'weight' => 90],
-        ];
-        $pool = WeightedPool::of(
-            $items,
-            fn (array $item) => $item['weight'],
-            randomizer: $this->fixedRandomizer(99),
-        );
-
-        // Act
-        $result = $pool->draw();
-
-        // Assert
-        $this->assertSame('B', $result['name'], 'rand=total-1 のとき最後のアイテムが返ること');
+        $this->assertSame($expectedName, $result['name'], "rand={$randValue} のとき {$expectedName} が返ること");
     }
 
     public function test_draw_does_not_modify_pool(): void
@@ -234,20 +229,4 @@ class WeightedPoolTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // ヘルパー
-    // -------------------------------------------------------------------------
-
-    private function fixedRandomizer(int $value): RandomizerInterface
-    {
-        return new class ($value) implements RandomizerInterface {
-            public function __construct(private readonly int $value)
-            {
-            }
-
-            public function next(int $max): int
-            {
-                return $this->value;
-            }
-        };
-    }
 }

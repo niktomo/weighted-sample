@@ -4,14 +4,18 @@ declare(strict_types=1);
 
 namespace WeightedSample\Tests\Unit\Selector;
 
+use InvalidArgumentException;
+use OverflowException;
 use PHPUnit\Framework\TestCase;
-use WeightedSample\Randomizer\RandomizerInterface;
 use WeightedSample\Selector\FenwickTreeSelector;
 use WeightedSample\Selector\FenwickTreeSelectorFactory;
 use WeightedSample\SelectorFactoryInterface;
+use WeightedSample\Tests\Support\RandomizerHelpers;
 
 class FenwickTreeSelectorFactoryTest extends TestCase
 {
+    use RandomizerHelpers;
+
     // -------------------------------------------------------------------------
     // インターフェース実装
     // -------------------------------------------------------------------------
@@ -47,7 +51,7 @@ class FenwickTreeSelectorFactoryTest extends TestCase
         $factory = new FenwickTreeSelectorFactory();
 
         // Act & Assert
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(InvalidArgumentException::class);
         $factory->create([]);
     }
 
@@ -57,7 +61,7 @@ class FenwickTreeSelectorFactoryTest extends TestCase
         $factory = new FenwickTreeSelectorFactory();
 
         // Act & Assert
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(InvalidArgumentException::class);
         $factory->create([0, 10]);
     }
 
@@ -68,7 +72,7 @@ class FenwickTreeSelectorFactoryTest extends TestCase
         $half    = intdiv(\PHP_INT_MAX, 2) + 1;
 
         // Act & Assert
-        $this->expectException(\OverflowException::class);
+        $this->expectException(OverflowException::class);
         $factory->create([$half, $half]);
     }
 
@@ -104,17 +108,4 @@ class FenwickTreeSelectorFactoryTest extends TestCase
         $this->assertNotSame($selectorA, $selectorB, 'create() を複数回呼ぶと独立したインスタンスが返ること');
     }
 
-    private function fixedRandomizer(int $value): RandomizerInterface
-    {
-        return new class ($value) implements RandomizerInterface {
-            public function __construct(private readonly int $value)
-            {
-            }
-
-            public function next(int $max): int
-            {
-                return $this->value;
-            }
-        };
-    }
 }

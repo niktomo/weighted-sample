@@ -4,15 +4,19 @@ declare(strict_types=1);
 
 namespace WeightedSample\Tests\Unit;
 
+use InvalidArgumentException;
+use OverflowException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
-use WeightedSample\Randomizer\RandomizerInterface;
 use WeightedSample\Randomizer\SeededRandomizer;
 use WeightedSample\Selector\PrefixSumSelector;
 use WeightedSample\Selector\SelectorInterface;
+use WeightedSample\Tests\Support\RandomizerHelpers;
 
 class PrefixSumSelectorTest extends TestCase
 {
+    use RandomizerHelpers;
+
     // -------------------------------------------------------------------------
     // インターフェース実装
     // -------------------------------------------------------------------------
@@ -33,7 +37,7 @@ class PrefixSumSelectorTest extends TestCase
     public function test_build_throws_on_empty_weights(): void
     {
         // Arrange & Act & Assert
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(InvalidArgumentException::class);
         PrefixSumSelector::build([]);
     }
 
@@ -42,7 +46,7 @@ class PrefixSumSelectorTest extends TestCase
     public function test_build_throws_on_non_positive_weight(array $weights): void
     {
         // Arrange & Act & Assert
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(InvalidArgumentException::class);
         PrefixSumSelector::build($weights);
     }
 
@@ -63,7 +67,7 @@ class PrefixSumSelectorTest extends TestCase
         $half = intdiv(\PHP_INT_MAX, 2) + 1;
 
         // Act & Assert
-        $this->expectException(\OverflowException::class);
+        $this->expectException(OverflowException::class);
         PrefixSumSelector::build([$half, $half]);
     }
 
@@ -153,17 +157,4 @@ class PrefixSumSelectorTest extends TestCase
         $this->assertEqualsWithDelta(90.0, $counts[2] / $draws * 100, 0.5, 'index 2 (weight=90) の出現率が 90% ±0.5% の範囲内であること');
     }
 
-    private function fixedRandomizer(int $value): RandomizerInterface
-    {
-        return new class ($value) implements RandomizerInterface {
-            public function __construct(private readonly int $value)
-            {
-            }
-
-            public function next(int $max): int
-            {
-                return $this->value;
-            }
-        };
-    }
 }

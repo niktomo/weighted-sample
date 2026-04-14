@@ -4,15 +4,19 @@ declare(strict_types=1);
 
 namespace WeightedSample\Tests\Unit;
 
+use InvalidArgumentException;
+use OverflowException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
-use WeightedSample\Randomizer\RandomizerInterface;
 use WeightedSample\Randomizer\SeededRandomizer;
 use WeightedSample\Selector\FenwickTreeSelector;
 use WeightedSample\Selector\SelectorInterface;
+use WeightedSample\Tests\Support\RandomizerHelpers;
 
 class FenwickTreeSelectorTest extends TestCase
 {
+    use RandomizerHelpers;
+
     // -------------------------------------------------------------------------
     // インターフェース実装
     // -------------------------------------------------------------------------
@@ -33,7 +37,7 @@ class FenwickTreeSelectorTest extends TestCase
     public function test_build_throws_on_empty_weights(): void
     {
         // Arrange & Act & Assert
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(InvalidArgumentException::class);
         FenwickTreeSelector::build([]);
     }
 
@@ -42,7 +46,7 @@ class FenwickTreeSelectorTest extends TestCase
     public function test_build_throws_on_non_positive_weight(array $weights): void
     {
         // Arrange & Act & Assert
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(InvalidArgumentException::class);
         FenwickTreeSelector::build($weights);
     }
 
@@ -63,7 +67,7 @@ class FenwickTreeSelectorTest extends TestCase
         $half = intdiv(\PHP_INT_MAX, 2) + 1;
 
         // Act & Assert
-        $this->expectException(\OverflowException::class);
+        $this->expectException(OverflowException::class);
         FenwickTreeSelector::build([$half, $half]);
     }
 
@@ -90,8 +94,8 @@ class FenwickTreeSelectorTest extends TestCase
         $selector = FenwickTreeSelector::build([100]);
 
         // Act & Assert
-        $this->assertSame(0, $selector->pick($this->valueRandomizer(0)), 'アイテムが 1 つのとき pick は常に 0 を返すこと（r=0）');
-        $this->assertSame(0, $selector->pick($this->valueRandomizer(99)), 'アイテムが 1 つのとき pick は常に 0 を返すこと（r=99）');
+        $this->assertSame(0, $selector->pick($this->fixedRandomizer(0)), 'アイテムが 1 つのとき pick は常に 0 を返すこと（r=0）');
+        $this->assertSame(0, $selector->pick($this->fixedRandomizer(99)), 'アイテムが 1 つのとき pick は常に 0 を返すこと（r=99）');
     }
 
     public function test_pick_boundary_below_first_threshold(): void
@@ -102,7 +106,7 @@ class FenwickTreeSelectorTest extends TestCase
         $selector = FenwickTreeSelector::build([10, 90]);
 
         // Act & Assert
-        $this->assertSame(0, $selector->pick($this->valueRandomizer(9)), 'r=9 のとき index 0 が返ること（第 1 アイテムの帯の末尾）');
+        $this->assertSame(0, $selector->pick($this->fixedRandomizer(9)), 'r=9 のとき index 0 が返ること（第 1 アイテムの帯の末尾）');
     }
 
     public function test_pick_boundary_at_first_threshold(): void
@@ -112,7 +116,7 @@ class FenwickTreeSelectorTest extends TestCase
         $selector = FenwickTreeSelector::build([10, 90]);
 
         // Act & Assert
-        $this->assertSame(1, $selector->pick($this->valueRandomizer(10)), 'r=10 のとき index 1 が返ること（第 2 アイテムの帯の先頭）');
+        $this->assertSame(1, $selector->pick($this->fixedRandomizer(10)), 'r=10 のとき index 1 が返ること（第 2 アイテムの帯の先頭）');
     }
 
     public function test_all_items_appear_in_sufficient_draws(): void
@@ -168,6 +172,7 @@ class FenwickTreeSelectorTest extends TestCase
         }
 
         // Assert — index 0 は出ない、index 1 は 30%, index 2 は 70%
+        // 3σ = 3 × sqrt(p(1−p) / N): p=0.30 → 0.43%, p=0.70 → 0.43% なので delta=0.5% は保守的に安全
         $this->assertSame(0, $counts[0], 'update(0, 0) 後に index 0 が一度も選ばれないこと');
         $this->assertEqualsWithDelta(30.0, $counts[1] / $draws * 100, 0.5, 'index 1 の出現率が 30% ±0.5% の範囲内であること');
         $this->assertEqualsWithDelta(70.0, $counts[2] / $draws * 100, 0.5, 'index 2 の出現率が 70% ±0.5% の範囲内であること');
@@ -220,6 +225,26 @@ class FenwickTreeSelectorTest extends TestCase
         $this->assertSame(90, $selector->totalWeight(), 'update(0, 0) 後の totalWeight が 90 になること');
     }
 
+    public function test_update_to_zero_is_idempotent(): void
+    {
+        // Arrange — index 0 を 2 回 0 にしても totalWeight と挙動が安定していること
+        $selector = FenwickTreeSelector::build([10, 90]);
+        $selector->update(0, 0); // 1 回目: 10 → 0
+
+        // Act — 2 回目: 既に 0 なので差分なし
+        $selector->update(0, 0);
+
+        // Assert — totalWeight は変わらず、index 0 は選ばれない
+        $this->assertSame(90, $selector->totalWeight(), '2 回 update(0, 0) しても totalWeight は変わらないこと');
+
+        $seen = [];
+        $rng  = new SeededRandomizer(42);
+        for ($i = 0; $i < 1000; $i++) {
+            $seen[$selector->pick($rng)] = true;
+        }
+        $this->assertArrayNotHasKey(0, $seen, '2 回 update(0, 0) 後も index 0 が選ばれないこと');
+    }
+
     public function test_update_all_to_zero_makes_total_weight_zero(): void
     {
         // Arrange
@@ -269,21 +294,79 @@ class FenwickTreeSelectorTest extends TestCase
         $this->assertArrayNotHasKey(2, $seen, 'update(2, 0) 後に index 2 が選ばれないこと');
     }
 
-    // -------------------------------------------------------------------------
-    // ヘルパー
-    // -------------------------------------------------------------------------
-
-    private function valueRandomizer(int $value): RandomizerInterface
+    public function test_update_throws_on_negative_weight(): void
     {
-        return new class ($value) implements RandomizerInterface {
-            public function __construct(private readonly int $value)
-            {
-            }
+        // Arrange
+        $selector = FenwickTreeSelector::build([10, 30, 60]);
 
-            public function next(int $max): int
-            {
-                return $this->value;
-            }
-        };
+        // Assert
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Weight must be non-negative');
+
+        // Act
+        $selector->update(0, -1);
     }
+
+    public function test_update_throws_on_out_of_range_index(): void
+    {
+        // Arrange
+        $selector = FenwickTreeSelector::build([10, 30, 60]);
+
+        // Assert
+        $this->expectException(InvalidArgumentException::class);
+
+        // Act
+        $selector->update(3, 10);
+    }
+
+    public function test_update_throws_on_overflow_when_new_weight_is_too_large(): void
+    {
+        // Arrange — 2アイテム合計 total=2 の状態から index=1 を PHP_INT_MAX に更新すると
+        //   delta = PHP_INT_MAX - 1、newTotal = 2 + (PHP_INT_MAX - 1) = PHP_INT_MAX + 1 → オーバーフロー
+        $selector = FenwickTreeSelector::build([1, 1]);
+
+        // Assert
+        $this->expectException(OverflowException::class);
+
+        // Act
+        $selector->update(1, \PHP_INT_MAX);
+    }
+
+    // -------------------------------------------------------------------------
+    // onItemExcluded() — ItemExclusionObserverInterface 実装
+    // -------------------------------------------------------------------------
+
+    public function test_on_item_excluded_removes_item_from_picks(): void
+    {
+        // Arrange — weights=[10, 90]、Observer 経由で index=0 を除外
+        $selector = FenwickTreeSelector::build([10, 90]);
+
+        // Act
+        $selector->onItemExcluded(0);
+
+        // Assert — update(0, 0) と等価: totalWeight が 90 になり index 0 は選ばれない
+        $this->assertSame(90, $selector->totalWeight(), 'onItemExcluded(0) 後の totalWeight が 90 になること');
+
+        $seen = [];
+        $rng  = new SeededRandomizer(42);
+        for ($i = 0; $i < 1000; $i++) {
+            $seen[$selector->pick($rng)] = true;
+        }
+        $this->assertArrayNotHasKey(0, $seen, 'onItemExcluded(0) 後に index 0 が選ばれないこと');
+        $this->assertArrayHasKey(1, $seen, 'onItemExcluded(0) 後も index 1 は選ばれること');
+    }
+
+    public function test_on_item_excluded_is_idempotent(): void
+    {
+        // Arrange
+        $selector = FenwickTreeSelector::build([10, 90]);
+        $selector->onItemExcluded(0);
+
+        // Act — 2 回目の呼び出しは安全に無視される
+        $selector->onItemExcluded(0);
+
+        // Assert — totalWeight は 90 のまま変わらない
+        $this->assertSame(90, $selector->totalWeight(), '2 回 onItemExcluded(0) しても totalWeight は変わらないこと');
+    }
+
 }

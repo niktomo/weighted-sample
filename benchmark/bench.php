@@ -7,22 +7,24 @@ declare(strict_types=1);
  *
  * Sections:
  *   1. WeightedPool  — immutable pool; build once, draw repeatedly
- *   2. DestructivePool — stateful; each trial rebuilds and draws until empty
- *   3. BoxPool       — stateful; each trial rebuilds and draws until stock runs out
- *   4. Selector pick throughput — PrefixSum / Alias / Fenwick across item counts
- *   5. DestructivePool scaling  — PrefixSum O(n²) vs FenwickTree O(n log n)
- *   6. Accuracy                 — max deviation from expected across all selectors
+ *   2. BoxPool       — stateful; each trial rebuilds and draws until stock runs out
+ *   3. Selector pick throughput — PrefixSum / Alias / Fenwick across item counts
+ *   4. Accuracy                 — max deviation from expected across all selectors
  */
 
 require_once __DIR__ . '/../vendor/autoload.php';
 
+use WeightedSample\Builder\FenwickSelectorBundleFactory;
+use WeightedSample\Builder\RebuildSelectorBundleFactory;
 use WeightedSample\Pool\BoxPool;
-use WeightedSample\Pool\DestructivePool;
 use WeightedSample\Pool\WeightedPool;
 use WeightedSample\Randomizer\SeededRandomizer;
 use WeightedSample\Selector\AliasTableSelector;
+use WeightedSample\Selector\AliasTableSelectorFactory;
 use WeightedSample\Selector\FenwickTreeSelector;
+use WeightedSample\Selector\FenwickTreeSelectorFactory;
 use WeightedSample\Selector\PrefixSumSelector;
+use WeightedSample\Selector\PrefixSumSelectorFactory;
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -43,13 +45,6 @@ $weightedItems = [
     ['name' => 'SSR', 'weight' => 1],
     ['name' => 'SR',  'weight' => 9],
     ['name' => 'R',   'weight' => 90],
-];
-
-/** @var list<array{name: string, weight: int}> */
-$destructiveItems = [
-    ['name' => 'Gold',   'weight' => 10],
-    ['name' => 'Silver', 'weight' => 30],
-    ['name' => 'Bronze', 'weight' => 60],
 ];
 
 /** @var list<array{name: string, weight: int, stock: int}> */
@@ -99,8 +94,11 @@ $ms = measureMs(function () use ($weightedItems): void {
 });
 printRow('Build only', $ms, BUILD_TRIALS);
 
-foreach (['PrefixSum' => PrefixSumSelector::class, 'Alias' => AliasTableSelector::class] as $name => $cls) {
-    $pool = WeightedPool::of($weightedItems, fn (array $item): int => $item['weight'], selectorClass: $cls, randomizer: new SeededRandomizer(42));
+foreach ([
+    'PrefixSum' => new PrefixSumSelectorFactory(),
+    'Alias'     => new AliasTableSelectorFactory(),
+] as $name => $factory) {
+    $pool = WeightedPool::of($weightedItems, fn (array $item): int => $item['weight'], selectorFactory: $factory, randomizer: new SeededRandomizer(42));
     $ms   = measureMs(function () use ($pool): void {
         for ($i = 0; $i < WEIGHTED_DRAWS_PER_TRIAL; $i++) { $pool->draw(); }
     });
@@ -116,40 +114,7 @@ $ms = measureMs(function () use ($weightedItems): void {
 printRow('Total (B+100D)', $ms, BUILD_TRIALS);
 
 // ===========================================================================
-// Section 2: DestructivePool (small pool, 3 items)
-// ===========================================================================
-
-$destructiveN = count($destructiveItems);
-printSectionHeader("DestructivePool (n={$destructiveN}: Gold/Silver/Bronze)");
-
-$ms = measureMs(function () use ($destructiveItems): void {
-    for ($i = 0; $i < BUILD_TRIALS; $i++) {
-        DestructivePool::of($destructiveItems, fn (array $item): int => $item['weight'], randomizer: new SeededRandomizer(42));
-    }
-});
-printRow('Build only', $ms, BUILD_TRIALS);
-
-foreach (['PrefixSum' => PrefixSumSelector::class, 'Fenwick' => FenwickTreeSelector::class] as $name => $cls) {
-    $drawTotal = 0.0;
-    for ($trial = 0; $trial < POOL_TRIALS; $trial++) {
-        $pool = DestructivePool::of($destructiveItems, fn (array $item): int => $item['weight'], selectorClass: $cls, randomizer: new SeededRandomizer($trial));
-        $drawTotal += measureMs(function () use ($pool, $destructiveN): void {
-            for ($d = 0; $d < $destructiveN; $d++) { $pool->draw(); }
-        });
-    }
-    printRow("Draw all ({$name})", $drawTotal, POOL_TRIALS * $destructiveN);
-}
-
-$ms = measureMs(function () use ($destructiveItems): void {
-    for ($trial = 0; $trial < POOL_TRIALS; $trial++) {
-        $pool = DestructivePool::of($destructiveItems, fn (array $item): int => $item['weight'], randomizer: new SeededRandomizer($trial));
-        while (! $pool->isEmpty()) { $pool->draw(); }
-    }
-});
-printRow('Total (B+DrawAll)', $ms, POOL_TRIALS);
-
-// ===========================================================================
-// Section 3: BoxPool
+// Section 2: BoxPool
 // ===========================================================================
 
 $boxDrawsPerPool = (int) array_sum(array_column($boxItems, 'stock'));
@@ -162,10 +127,13 @@ $ms = measureMs(function () use ($boxItems): void {
 });
 printRow('Build only', $ms, BUILD_TRIALS);
 
-foreach (['PrefixSum' => PrefixSumSelector::class, 'Fenwick' => FenwickTreeSelector::class] as $name => $cls) {
+foreach ([
+    'PrefixSum (Rebuild)' => new RebuildSelectorBundleFactory(new PrefixSumSelectorFactory()),
+    'Fenwick'             => new FenwickSelectorBundleFactory(),
+] as $name => $bundleFactory) {
     $drawTotal = 0.0;
     for ($trial = 0; $trial < POOL_TRIALS; $trial++) {
-        $pool = BoxPool::of($boxItems, fn (array $item): int => $item['weight'], fn (array $item): int => $item['stock'], selectorClass: $cls, randomizer: new SeededRandomizer($trial));
+        $pool = BoxPool::of($boxItems, fn (array $item): int => $item['weight'], fn (array $item): int => $item['stock'], bundleFactory: $bundleFactory, randomizer: new SeededRandomizer($trial));
         $drawTotal += measureMs(function () use ($pool): void {
             while (! $pool->isEmpty()) { $pool->draw(); }
         });
@@ -174,7 +142,7 @@ foreach (['PrefixSum' => PrefixSumSelector::class, 'Fenwick' => FenwickTreeSelec
 }
 
 // ===========================================================================
-// Section 4: Selector pick throughput vs item count
+// Section 3: Selector pick throughput vs item count
 // ===========================================================================
 
 echo "\n" . str_repeat('=', 80) . "\n";
@@ -203,47 +171,7 @@ foreach ([3, 10, 30, 50, 100, 200, 500, 1000] as $n) {
 echo str_repeat('-', 72) . "\n";
 
 // ===========================================================================
-// Section 5: DestructivePool scaling — PrefixSum O(n²) vs FenwickTree O(n log n)
-// ===========================================================================
-
-echo "\n" . str_repeat('=', 80) . "\n";
-echo "  DestructivePool scaling: draw-all time (µs/item) vs N\n";
-echo "  PrefixSum = O(n²) total,  FenwickTree = O(n log n) total\n";
-echo str_repeat('=', 80) . "\n";
-printf("%-8s %22s %22s %10s\n", 'N', 'PrefixSum (µs/item)', 'Fenwick (µs/item)', 'Speedup');
-echo str_repeat('-', 66) . "\n";
-
-$scalingTrials = 200;
-foreach ([10, 50, 100, 250, 500, 1000, 2500, 5000] as $n) {
-    $items = array_map(fn (int $i): array => ['w' => $i], range(1, $n));
-
-    $msPrefix = measureMs(function () use ($items, $n, $scalingTrials): void {
-        for ($t = 0; $t < $scalingTrials; $t++) {
-            $pool = DestructivePool::of($items, fn (array $item): int => $item['w'], selectorClass: PrefixSumSelector::class, randomizer: new SeededRandomizer($t));
-            while (! $pool->isEmpty()) { $pool->draw(); }
-        }
-    });
-
-    $msFenwick = measureMs(function () use ($items, $n, $scalingTrials): void {
-        for ($t = 0; $t < $scalingTrials; $t++) {
-            $pool = DestructivePool::of($items, fn (array $item): int => $item['w'], selectorClass: FenwickTreeSelector::class, randomizer: new SeededRandomizer($t));
-            while (! $pool->isEmpty()) { $pool->draw(); }
-        }
-    });
-
-    $totalDraws    = $scalingTrials * $n;
-    $prefixUsItem  = $msPrefix  / $totalDraws * 1_000;
-    $fenwickUsItem = $msFenwick / $totalDraws * 1_000;
-    $speedup       = $msFenwick > 0 ? $msPrefix / $msFenwick : 0.0;
-
-    printf("%-8d %19.4f µs %19.4f µs %9.2fx\n", $n, $prefixUsItem, $fenwickUsItem, $speedup);
-}
-
-echo str_repeat('-', 66) . "\n";
-echo "Speedup > 1.0 means FenwickTree is faster.\n";
-
-// ===========================================================================
-// Section 6: Accuracy — max deviation from expected (equal weights)
+// Section 4: Accuracy — max deviation from expected (equal weights)
 // ===========================================================================
 
 echo "\n" . str_repeat('=', 80) . "\n";

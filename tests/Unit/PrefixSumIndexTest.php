@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace WeightedSample\Tests\Unit;
 
+use InvalidArgumentException;
+use OverflowException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use WeightedSample\Internal\PrefixSumIndex;
@@ -59,6 +61,23 @@ class PrefixSumIndexTest extends TestCase
         $this->assertSame(0, $index->pick(41), 'アイテムが1つのとき rand=total-1 でインデックス 0 が返ること');
     }
 
+    public function test_pick_boundaries_for_three_items(): void
+    {
+        // Arrange — weights=[10, 20, 70], total=100
+        //   prefix sums: [10, 30, 100]
+        //   r=9  → cumsum[0]=10 > 9  → index 0 (第1アイテムの帯の末尾)
+        //   r=10 → cumsum[0]=10 ≤ 10 → index 1 (第2アイテムの帯の先頭)
+        //   r=29 → cumsum[1]=30 > 29 → index 1 (第2アイテムの帯の末尾)
+        //   r=30 → cumsum[1]=30 ≤ 30 → index 2 (第3アイテムの帯の先頭)
+        $index = new PrefixSumIndex([10, 20, 70]);
+
+        // Act & Assert
+        $this->assertSame(0, $index->pick(9), 'r=9（weight=10 の帯の末尾）は index 0 を返すこと');
+        $this->assertSame(1, $index->pick(10), 'r=10（weight=20 の帯の先頭）は index 1 を返すこと');
+        $this->assertSame(1, $index->pick(29), 'r=29（weight=20 の帯の末尾）は index 1 を返すこと');
+        $this->assertSame(2, $index->pick(30), 'r=30（weight=70 の帯の先頭）は index 2 を返すこと');
+    }
+
     // -------------------------------------------------------------------------
     // total()
     // -------------------------------------------------------------------------
@@ -92,7 +111,7 @@ class PrefixSumIndexTest extends TestCase
     public function test_throws_on_empty_weights(): void
     {
         // Assert
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(InvalidArgumentException::class);
 
         // Act
         new PrefixSumIndex([]);
@@ -101,7 +120,7 @@ class PrefixSumIndexTest extends TestCase
     public function test_throws_on_zero_weight(): void
     {
         // Assert
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('weight');
 
         // Act
@@ -111,7 +130,7 @@ class PrefixSumIndexTest extends TestCase
     public function test_throws_on_negative_weight(): void
     {
         // Assert
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('weight');
 
         // Act
@@ -124,7 +143,7 @@ class PrefixSumIndexTest extends TestCase
         $almostMax = intdiv(\PHP_INT_MAX, 2);
 
         // Assert
-        $this->expectException(\OverflowException::class);
+        $this->expectException(OverflowException::class);
 
         // Act
         new PrefixSumIndex([$almostMax, $almostMax, $almostMax]);

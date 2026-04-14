@@ -4,27 +4,41 @@ declare(strict_types=1);
 
 namespace WeightedSample\Builder;
 
-use WeightedSample\Selector\FenwickTreeSelector;
+use InvalidArgumentException;
+use WeightedSample\ItemExclusionObserverInterface;
 use WeightedSample\Selector\SelectorInterface;
+use WeightedSample\TotalWeightQueryInterface;
 
 /**
  * O(log n) selector builder backed by a FenwickTreeSelector.
  *
- * subtract() calls update(index, 0) on the underlying FenwickTreeSelector,
- * which propagates the change in O(log n) without any full rebuild.
+ * Uses the Observer pattern: subtract() notifies the selector via
+ * ItemExclusionObserverInterface::onItemExcluded(), which updates the
+ * internal Fenwick tree in O(log n) without any full rebuild.
  *
- * totalWeight() delegates to FenwickTreeSelector::totalWeight(), which is O(1).
+ * The constructor accepts any object that satisfies all three interfaces:
+ * SelectorInterface (for picking), ItemExclusionObserverInterface (for exclusion
+ * notification), and TotalWeightQueryInterface (for total-weight querying).
+ * FenwickSelectorBuilder is therefore not coupled to the concrete FenwickTreeSelector class.
+ *
+ * totalWeight() delegates to TotalWeightQueryInterface::totalWeight(), which is O(1).
  */
 final class FenwickSelectorBuilder implements SelectorBuilderInterface
 {
     public function __construct(
-        private readonly FenwickTreeSelector $selector,
+        private readonly SelectorInterface&ItemExclusionObserverInterface&TotalWeightQueryInterface $selector,
     ) {
     }
 
+    /**
+     * Delegates to onItemExcluded(), which calls update($index, 0) on the Fenwick tree.
+     * Calling subtract() on an already-excluded index is a no-op (delta = 0).
+     *
+     * @throws InvalidArgumentException if $index is out of range [0, size)
+     */
     public function subtract(int $index): void
     {
-        $this->selector->update($index, 0);  // O(log n)
+        $this->selector->onItemExcluded($index);  // O(log n) via observer
     }
 
     public function currentSelector(): SelectorInterface

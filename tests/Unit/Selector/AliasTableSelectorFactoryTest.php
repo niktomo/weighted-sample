@@ -4,14 +4,18 @@ declare(strict_types=1);
 
 namespace WeightedSample\Tests\Unit\Selector;
 
+use InvalidArgumentException;
+use OverflowException;
 use PHPUnit\Framework\TestCase;
-use WeightedSample\Randomizer\RandomizerInterface;
 use WeightedSample\Selector\AliasTableSelector;
 use WeightedSample\Selector\AliasTableSelectorFactory;
 use WeightedSample\SelectorFactoryInterface;
+use WeightedSample\Tests\Support\RandomizerHelpers;
 
 class AliasTableSelectorFactoryTest extends TestCase
 {
+    use RandomizerHelpers;
+
     // -------------------------------------------------------------------------
     // インターフェース実装
     // -------------------------------------------------------------------------
@@ -47,7 +51,7 @@ class AliasTableSelectorFactoryTest extends TestCase
         $factory = new AliasTableSelectorFactory();
 
         // Act & Assert
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(InvalidArgumentException::class);
         $factory->create([]);
     }
 
@@ -57,7 +61,7 @@ class AliasTableSelectorFactoryTest extends TestCase
         $factory = new AliasTableSelectorFactory();
 
         // Act & Assert
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(InvalidArgumentException::class);
         $factory->create([0, 10]);
     }
 
@@ -69,7 +73,7 @@ class AliasTableSelectorFactoryTest extends TestCase
         $half    = intdiv(\PHP_INT_MAX, 2);
 
         // Act & Assert
-        $this->expectException(\OverflowException::class);
+        $this->expectException(OverflowException::class);
         $factory->create([$half, $half]);
     }
 
@@ -82,7 +86,7 @@ class AliasTableSelectorFactoryTest extends TestCase
         $w       = intdiv(\PHP_INT_MAX, 11);  // W = 10w < PHP_INT_MAX; n×W > PHP_INT_MAX
 
         // Act & Assert
-        $this->expectException(\OverflowException::class);
+        $this->expectException(OverflowException::class);
         $factory->create(array_fill(0, 10, $w));
     }
 
@@ -118,17 +122,4 @@ class AliasTableSelectorFactoryTest extends TestCase
         $this->assertNotSame($selectorA, $selectorB, 'create() を複数回呼ぶと独立したインスタンスが返ること');
     }
 
-    private function fixedRandomizer(int $value): RandomizerInterface
-    {
-        return new class ($value) implements RandomizerInterface {
-            public function __construct(private readonly int $value)
-            {
-            }
-
-            public function next(int $max): int
-            {
-                return $this->value;
-            }
-        };
-    }
 }

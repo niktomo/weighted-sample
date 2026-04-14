@@ -14,6 +14,8 @@ use WeightedSample\Selector\SelectorInterface;
  * Used by RebuildSelectorBuilder to maintain stable original indices
  * after zero-weight entries are filtered out for rebuild.
  *
+ * @see RebuildSelectorBuilder
+ *
  * @internal
  */
 final readonly class MappedSelector implements SelectorInterface
