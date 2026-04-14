@@ -127,9 +127,11 @@ final class BoxPool implements ExhaustiblePoolInterface
         }
 
         $results = [];
+        $drawn   = 0;
 
-        while (!$this->isEmpty() && count($results) < $count) {
+        while (!$this->isEmpty() && $drawn < $count) {
             $results[] = $this->draw();
+            $drawn++;
         }
 
         return $results;
