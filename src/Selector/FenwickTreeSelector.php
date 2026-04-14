@@ -152,8 +152,11 @@ final class FenwickTreeSelector implements SelectorInterface, ItemExclusionObser
      * Pass newWeight=0 to exclude an item from future picks (used by onItemExcluded()).
      * Calling update(i, 0) on an already-zero weight is a no-op (delta=0).
      *
-     * @throws \InvalidArgumentException if $index is out of range or $newWeight is negative
-     * @throws \OverflowException        if the resulting total weight would be negative
+     * @internal Intended to be called only via onItemExcluded(). Direct calls from
+     *   outside this class may break BoxPool's invariant that weights only decrease to 0.
+     *
+     * @throws InvalidArgumentException if $index is out of range or $newWeight is negative
+     * @throws OverflowException        if the resulting total weight would exceed PHP_INT_MAX
      */
     public function update(int $index, int $newWeight): void
     {

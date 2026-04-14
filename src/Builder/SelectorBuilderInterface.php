@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace WeightedSample\Builder;
 
 use InvalidArgumentException;
-use LogicException;
 use WeightedSample\Selector\SelectorInterface;
+use WeightedSample\TotalWeightQueryInterface;
 
 /**
  * Manages the mutable selection state of an exhaustible pool (e.g. BoxPool).
@@ -33,7 +33,7 @@ use WeightedSample\Selector\SelectorInterface;
  * }
  * ```
  */
-interface SelectorBuilderInterface
+interface SelectorBuilderInterface extends TotalWeightQueryInterface
 {
     /**
      * Exclude the item at $index from all future picks.
@@ -53,14 +53,11 @@ interface SelectorBuilderInterface
      *
      * Must not be called when totalWeight() === 0.
      *
-     * @throws LogicException if called with all weights at zero (RebuildSelectorBuilder).
+     * Behaviour when totalWeight() === 0 is implementation-defined:
+     *   - RebuildSelectorBuilder: throws LogicException (detected at rebuild time).
+     *   - FenwickSelectorBuilder: returns the selector; pick() will throw UnderflowException.
+     *
+     * Callers must guard with totalWeight() === 0 before invoking this method.
      */
     public function currentSelector(): SelectorInterface;
-
-    /**
-     * Sum of remaining (non-excluded) weights.
-     * Returns 0 when all items have been excluded.
-     * Runs in O(1).
-     */
-    public function totalWeight(): int;
 }

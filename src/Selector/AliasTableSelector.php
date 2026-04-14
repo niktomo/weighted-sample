@@ -132,6 +132,12 @@ final readonly class AliasTableSelector implements SelectorInterface
             }
         }
 
+        // Termination guarantee (integer arithmetic):
+        //   Total probability mass = n × W. Each iteration allocates exactly W to one column
+        //   (threshold[$s] = prob[$s], and prob[$l] decreases by W - prob[$s]).
+        //   After exactly n iterations, all n × W of mass is allocated → both lists are empty.
+        //   With exact integer arithmetic (no float rounding), this holds perfectly;
+        //   no residual handling is needed after the loop.
         while ($small !== [] && $large !== []) {
             $smallIndex = array_pop($small);
             $largeIndex = array_pop($large);

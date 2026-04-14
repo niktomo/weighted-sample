@@ -338,10 +338,14 @@ The default (no seed) uses `\Random\Engine\Secure` for cryptographically safe ra
 **Safe seed derivation** (offline simulations only): derive the seed from a high-entropy source rather than a sequential counter or timestamp.
 
 ```php
-// Derive a reproducible seed from a unique, high-entropy identifier
-$seed = unpack('N', random_bytes(4))[1];         // one-off: random 32-bit seed
-// — or — bind it to a specific entity so results are reproducible per entity:
+// Bind the seed to a specific entity for per-entity reproducibility.
+// The same userId + campaignId always produces the same draw sequence:
 $seed = (int) hexdec(substr(hash('sha256', $userId . ':' . $campaignId), 0, 8));
+
+// If you need a one-off reproducible sequence, generate the seed once, persist it,
+// then reuse it to replay the exact same draws later:
+$seed = unpack('N', random_bytes(4))[1]; // store this value — it is the key to replay
+// Note: if replay is not needed, use SecureRandomizer (the default) instead.
 ```
 
 ---

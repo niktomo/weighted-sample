@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.1] - 2026-04-15
+
+### Changed
+- `SelectorBuilderInterface` now extends `TotalWeightQueryInterface`; the previously independent `totalWeight(): int` declaration is inherited. Existing implementations are unaffected as the signature is identical.
+- `FenwickSelectorBuilder::currentSelector()` now throws `LogicException` when `totalWeight() === 0`, consistent with `RebuildSelectorBuilder` (LSP compliance).
+- `FenwickTreeSelector::update()` — marked `@internal`; intended to be called only via `onItemExcluded()`. Direct external calls may break `BoxPool`'s invariant.
+- `AliasTableSelector::buildTable()` — added termination guarantee comment for Vose's algorithm loop.
+- `BoxPool::drawMany()` — added comment clarifying that `$drawn` counter overflow is unreachable in practice.
+
+### Fixed
+- README / README-ja — `SeededRandomizer` seed derivation examples clarified: entity-bound reproducibility and one-off replay are now shown as separate use cases, with an explicit note to use `SecureRandomizer` when replay is not needed.
+
 ## [3.0.0] - 2026-04-12
 
 ### Added
