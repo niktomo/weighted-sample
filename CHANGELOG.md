@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - README / README-ja — `SeededRandomizer` seed derivation examples clarified: entity-bound reproducibility and one-off replay are now shown as separate use cases, with an explicit note to use `SecureRandomizer` when replay is not needed.
 
-## [3.0.0] - 2026-04-12
+## [3.0.0] - 2026-04-15
 
 ### Added
 - `TotalWeightQueryInterface` — new interface for querying `totalWeight(): int`; separates read-only weight queries from exclusion notification (ISP). Implemented by `FenwickTreeSelector`.
@@ -201,7 +201,8 @@ BoxPool::of($items, $weightFn, fn($item) => 1); // was DestructivePool
 - `EmptyPoolException` — thrown when drawing from an empty pool or when all items are filtered out
 - Prefix sum + binary search O(log n) selection with integer arithmetic only
 
-[Unreleased]: https://github.com/niktomo/weighted-sample/compare/v3.0.0...HEAD
+[Unreleased]: https://github.com/niktomo/weighted-sample/compare/v3.0.1...HEAD
+[3.0.1]: https://github.com/niktomo/weighted-sample/compare/v3.0.0...v3.0.1
 [3.0.0]: https://github.com/niktomo/weighted-sample/compare/v2.0.0...v3.0.0
 [2.0.0]: https://github.com/niktomo/weighted-sample/compare/v1.1.0...v2.0.0
 [1.1.0]: https://github.com/niktomo/weighted-sample/compare/v1.0.1...v1.1.0
