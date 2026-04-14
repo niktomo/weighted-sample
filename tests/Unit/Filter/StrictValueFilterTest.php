@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace WeightedSample\Tests\Unit\Filter;
 
+use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
 use WeightedSample\Filter\CountedItemFilterInterface;
 use WeightedSample\Filter\ItemFilterInterface;
@@ -53,7 +54,7 @@ class StrictValueFilterTest extends TestCase
         $filter = new StrictValueFilter();
 
         // Assert
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('weight');
 
         // Act
@@ -66,7 +67,7 @@ class StrictValueFilterTest extends TestCase
         $filter = new StrictValueFilter();
 
         // Assert
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('weight');
 
         // Act
@@ -79,7 +80,7 @@ class StrictValueFilterTest extends TestCase
         $filter = new StrictValueFilter();
 
         // Assert
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('weight');
 
         // Act
@@ -92,7 +93,7 @@ class StrictValueFilterTest extends TestCase
         $filter = new StrictValueFilter();
 
         // Assert
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('count');
 
         // Act
@@ -105,7 +106,7 @@ class StrictValueFilterTest extends TestCase
         $filter = new StrictValueFilter();
 
         // Assert
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('count');
 
         // Act

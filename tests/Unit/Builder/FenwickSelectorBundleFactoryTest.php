@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace WeightedSample\Tests\Unit\Builder;
 
+use InvalidArgumentException;
+use OverflowException;
 use PHPUnit\Framework\TestCase;
 use WeightedSample\Builder\FenwickSelectorBundleFactory;
-use WeightedSample\Builder\SelectorBundle;
+use WeightedSample\Builder\SelectorBuilderInterface;
 use WeightedSample\Randomizer\SeededRandomizer;
 use WeightedSample\SelectorBundleFactoryInterface;
 
@@ -25,16 +27,16 @@ class FenwickSelectorBundleFactoryTest extends TestCase
         $this->assertInstanceOf(SelectorBundleFactoryInterface::class, $factory, 'FenwickSelectorBundleFactory が SelectorBundleFactoryInterface を実装していること');
     }
 
-    public function test_create_returns_selector_bundle(): void
+    public function test_create_returns_selector_builder_interface(): void
     {
         // Arrange
         $factory = new FenwickSelectorBundleFactory();
 
         // Act
-        $bundle = $factory->create([3, 5, 2]);
+        $builder = $factory->create([3, 5, 2]);
 
         // Assert
-        $this->assertInstanceOf(SelectorBundle::class, $bundle, 'create() が SelectorBundle を返すこと');
+        $this->assertInstanceOf(SelectorBuilderInterface::class, $builder, 'create() が SelectorBuilderInterface を返すこと');
     }
 
     // -------------------------------------------------------------------------
@@ -47,7 +49,7 @@ class FenwickSelectorBundleFactoryTest extends TestCase
         $factory = new FenwickSelectorBundleFactory();
 
         // Act & Assert
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(InvalidArgumentException::class);
         $factory->create([]);
     }
 
@@ -57,7 +59,7 @@ class FenwickSelectorBundleFactoryTest extends TestCase
         $factory = new FenwickSelectorBundleFactory();
 
         // Act & Assert
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(InvalidArgumentException::class);
         $factory->create([0, 10]);
     }
 
@@ -68,61 +70,61 @@ class FenwickSelectorBundleFactoryTest extends TestCase
         $half    = intdiv(\PHP_INT_MAX, 2) + 1;
 
         // Act & Assert
-        $this->expectException(\OverflowException::class);
+        $this->expectException(OverflowException::class);
         $factory->create([$half, $half]);
     }
 
     // -------------------------------------------------------------------------
-    // ペアリング契約 — builder.subtract() が bundle.selector.pick() に即時反映
+    // ペアリング契約 — subtract() が currentSelector()->pick() に即時反映
     // -------------------------------------------------------------------------
 
-    public function test_subtract_on_builder_is_reflected_in_selector(): void
+    public function test_subtract_is_reflected_in_current_selector(): void
     {
         // Arrange — weights=[10, 10, 10]、index=0 を差し引く
         $factory = new FenwickSelectorBundleFactory();
-        $bundle  = $factory->create([10, 10, 10]);
+        $builder = $factory->create([10, 10, 10]);
 
-        $bundle->builder->subtract(0);
+        $builder->subtract(0);
 
         $randomizer = new SeededRandomizer(42);
         $seen       = [];
 
         // Act — 300 回 pick して index=0 が出ないことを確認
         for ($i = 0; $i < 300; $i++) {
-            $seen[$bundle->selector->pick($randomizer)] = true;
+            $seen[$builder->currentSelector()->pick($randomizer)] = true;
         }
 
         // Assert
-        $this->assertArrayNotHasKey(0, $seen, 'subtract した index=0 が bundle->selector->pick() で選ばれないこと');
+        $this->assertArrayNotHasKey(0, $seen, 'subtract した index=0 が currentSelector()->pick() で選ばれないこと');
         $this->assertArrayHasKey(1, $seen, 'index=1 は引き続き選ばれること');
         $this->assertArrayHasKey(2, $seen, 'index=2 は引き続き選ばれること');
     }
 
-    public function test_bundle_selector_and_builder_share_same_state(): void
+    public function test_total_weight_updates_after_subtract(): void
     {
         // Arrange
         $factory = new FenwickSelectorBundleFactory();
-        $bundle  = $factory->create([5, 5]);
+        $builder = $factory->create([5, 5]);
 
-        // Act — builder 経由で subtract、builder.totalWeight で確認
-        $bundle->builder->subtract(0); // weight=5 を差し引く
+        // Act — subtract して totalWeight で確認
+        $builder->subtract(0); // weight=5 を差し引く
 
         // Assert — totalWeight が即時更新されていること
-        $this->assertSame(5, $bundle->builder->totalWeight(), 'subtract 後に totalWeight が正しく更新されること');
+        $this->assertSame(5, $builder->totalWeight(), 'subtract 後に totalWeight が正しく更新されること');
     }
 
-    public function test_each_create_call_returns_independent_bundle(): void
+    public function test_each_create_call_returns_independent_builder(): void
     {
         // Arrange
         $factory = new FenwickSelectorBundleFactory();
 
         // Act
-        $bundleA = $factory->create([1, 9]);
-        $bundleB = $factory->create([1, 9]);
+        $builderA = $factory->create([1, 9]);
+        $builderB = $factory->create([1, 9]);
 
-        $bundleA->builder->subtract(0);
+        $builderA->subtract(0);
 
-        // Assert — bundleA の操作が bundleB に影響しないこと
-        $this->assertSame(10, $bundleB->builder->totalWeight(), 'bundleA の subtract が bundleB に影響しないこと');
+        // Assert — builderA の操作が builderB に影響しないこと
+        $this->assertSame(10, $builderB->totalWeight(), 'builderA の subtract が builderB に影響しないこと');
     }
 }

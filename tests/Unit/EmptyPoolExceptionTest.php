@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace WeightedSample\Tests\Unit;
 
+use RuntimeException;
 use PHPUnit\Framework\TestCase;
 use WeightedSample\Exception\EmptyPoolException;
 
@@ -16,7 +17,7 @@ class EmptyPoolExceptionTest extends TestCase
 
         // Assert
         $this->assertInstanceOf(
-            \RuntimeException::class,
+            RuntimeException::class,
             $exception,
             'EmptyPoolException が RuntimeException を継承していること',
         );

@@ -115,19 +115,21 @@ class BoxPoolDrawTest extends TestCase
         $goldFirst = 0;
 
         // When: 10,000 試行して初回 draw が Gold である回数を数える
+        // 各 trial に trial 番号をシードとして使い、再現性を確保する
         for ($trial = 0; $trial < $trials; $trial++) {
-            $pool = BoxPool::of($items, fn (array $item) => $item['weight'], fn (array $item) => $item['stock']);
+            $pool = BoxPool::of($items, fn (array $item) => $item['weight'], fn (array $item) => $item['stock'], randomizer: new SeededRandomizer($trial));
             if ($pool->draw()['id'] === 'Gold') {
                 $goldFirst++;
             }
         }
 
-        // Then: Gold の初回確率は 50% ± 2% の範囲に収まること
+        // Then: Gold の初回確率は 50% ± 1.5% の範囲に収まること
+        // 3σ = 3 × sqrt(0.5 × 0.5 / 10000) = 3 × 0.005 = 0.015
         $goldRate = $goldFirst / $trials;
         $this->assertEqualsWithDelta(
             0.50,
             $goldRate,
-            0.02,
+            0.015,
             "Gold の初回抽選確率は約50%であること（実測: {$goldRate}）",
         );
     }
@@ -146,8 +148,9 @@ class BoxPoolDrawTest extends TestCase
         $cCount  = 0;
 
         // When: A が出るまで引き、A 除外後の次の draw を記録する
+        // 各 trial に trial 番号をシードとして使い、再現性を確保する
         for ($trial = 0; $trial < $trials; $trial++) {
-            $pool = BoxPool::of($items, fn (array $item) => $item['weight'], fn (array $item) => $item['stock']);
+            $pool = BoxPool::of($items, fn (array $item) => $item['weight'], fn (array $item) => $item['stock'], randomizer: new SeededRandomizer($trial));
 
             while (! $pool->isEmpty() && $pool->draw()['id'] !== 'A') {
                 // A が出るまで消費
@@ -163,14 +166,15 @@ class BoxPoolDrawTest extends TestCase
             }
         }
 
-        // Then: A 除外後の B:C 比率は 50:50 ± 2% であること
+        // Then: A 除外後の B:C 比率は 50:50 ± 1.5% であること
+        // 3σ = 3 × sqrt(0.5 × 0.5 / 10000) = 3 × 0.005 = 0.015
         $total = $bCount + $cCount;
         $this->assertGreaterThan(0, $total, 'A 除外後に B または C が引かれていること');
         $bRate = $bCount / $total;
         $this->assertEqualsWithDelta(
             0.50,
             $bRate,
-            0.02,
+            0.015,
             "A 除外後の B 出現率は約50%であること（実測: {$bRate}）",
         );
     }

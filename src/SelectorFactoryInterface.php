@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace WeightedSample;
 
+use InvalidArgumentException;
+use OverflowException;
 use WeightedSample\Selector\SelectorInterface;
 
 /**
@@ -17,8 +19,8 @@ interface SelectorFactoryInterface
      * Build a selector from a list of positive integer weights.
      *
      * @param  list<int> $weights
-     * @throws \InvalidArgumentException if weights is empty or contains non-positive values
-     * @throws \OverflowException        if total weight exceeds PHP_INT_MAX
+     * @throws InvalidArgumentException if weights is empty or contains non-positive values
+     * @throws OverflowException        if total weight exceeds PHP_INT_MAX
      */
     public function create(array $weights): SelectorInterface;
 }

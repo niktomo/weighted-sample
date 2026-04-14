@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace WeightedSample\Builder;
 
+use InvalidArgumentException;
+use LogicException;
+use OverflowException;
 use WeightedSample\Internal\MappedSelector;
 use WeightedSample\Selector\SelectorInterface;
 use WeightedSample\SelectorFactoryInterface;
@@ -37,6 +40,8 @@ final class RebuildSelectorBuilder implements SelectorBuilderInterface
 
     private int $cachedTotalWeight;
 
+    private bool $dirty = false;
+
     /** @var array<int, int> original-index → current weight (0 = excluded) */
     private array $weights;
 
@@ -48,20 +53,45 @@ final class RebuildSelectorBuilder implements SelectorBuilderInterface
         array $weights,
     ) {
         $this->weights = $weights;
-        $this->current           = $factory->create($weights);
-        $this->cachedTotalWeight = array_sum($weights);  // 初期化時のみ O(n)
+        $this->current = $factory->create($weights);
+
+        // Compute initial total weight with overflow guard — O(n) only at construction.
+        $total = 0;
+        foreach ($weights as $w) {
+            if ($total > PHP_INT_MAX - $w) {
+                throw new OverflowException(
+                    'Total weight would exceed PHP_INT_MAX; reduce item count or individual weights.',
+                );
+            }
+            $total += $w;
+        }
+        $this->cachedTotalWeight = $total;
     }
 
     public function subtract(int $index): void
     {
-        $this->cachedTotalWeight -= $this->weights[$index];  // 差分更新 O(1)
-        $this->weights[$index]    = 0;
+        if (!array_key_exists($index, $this->weights)) {
+            throw new InvalidArgumentException(
+                "Index {$index} does not exist in the pool.",
+            );
+        }
 
-        $this->rebuild();
+        if ($this->weights[$index] === 0) {
+            return;  // already excluded; avoid redundant dirty flag and O(n) rebuild
+        }
+
+        $this->cachedTotalWeight -= $this->weights[$index];  // O(1) diff update
+        $this->weights[$index]    = 0;
+        $this->dirty              = true;
     }
 
     public function currentSelector(): SelectorInterface
     {
+        if ($this->dirty) {
+            $this->rebuild();
+            $this->dirty = false;
+        }
+
         return $this->current;
     }
 
@@ -72,10 +102,8 @@ final class RebuildSelectorBuilder implements SelectorBuilderInterface
 
     private function rebuild(): void
     {
-        /** @var list<int> $activeWeights */
         $activeWeights = [];
-        /** @var list<int> $indexMap */
-        $indexMap = [];
+        $indexMap      = [];
 
         foreach ($this->weights as $originalIndex => $weight) {
             if ($weight > 0) {
@@ -85,8 +113,10 @@ final class RebuildSelectorBuilder implements SelectorBuilderInterface
         }
 
         if ($activeWeights === []) {
-            // 全アイテム消費済み。Pool が totalWeight()==0 を確認してから pick() するため到達しない。
-            return;
+            throw new LogicException(
+                'Rebuild invariant violated: all weights are zero but currentSelector() was called. '
+                . 'Pool must check totalWeight() === 0 before calling currentSelector().',
+            );
         }
 
         $inner         = $this->factory->create($activeWeights);

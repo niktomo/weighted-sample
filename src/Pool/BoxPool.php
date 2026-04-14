@@ -4,16 +4,16 @@ declare(strict_types=1);
 
 namespace WeightedSample\Pool;
 
+use Closure;
+use InvalidArgumentException;
 use WeightedSample\Builder\FenwickSelectorBundleFactory;
 use WeightedSample\Builder\SelectorBuilderInterface;
-use WeightedSample\Exception\AllItemsFilteredException;
 use WeightedSample\Exception\EmptyPoolException;
 use WeightedSample\Filter\CountedItemFilterInterface;
 use WeightedSample\Filter\PositiveValueFilter;
 use WeightedSample\Randomizer\RandomizerInterface;
 use WeightedSample\Randomizer\SecureRandomizer;
 use WeightedSample\SelectorBundleFactoryInterface;
-use InvalidArgumentException;
 
 /**
  * Weighted pool where each item has a finite count.
@@ -24,43 +24,37 @@ use InvalidArgumentException;
  */
 final class BoxPool implements ExhaustiblePoolInterface
 {
-    /** @var list<T> */
-    private readonly array $items;
-
-    /** @var list<int> */
+    /** @var array<int, int> */
     private array $counts;
-
-    private readonly SelectorBuilderInterface $builder;
 
     /**
      * @param list<T>   $items
      * @param list<int> $counts
      */
     private function __construct(
-        array $items,
+        private readonly array $items,
         array $counts,
-        SelectorBuilderInterface $builder,
+        private readonly SelectorBuilderInterface $builder,
         private readonly RandomizerInterface $randomizer,
     ) {
-        $this->items   = $items;
-        $this->counts  = $counts;
-        $this->builder = $builder;
+        $this->counts = $counts;
     }
 
     /**
      * @template TItem
      * @param iterable<TItem>                         $items
-     * @param \Closure(TItem): int                    $weightExtractor
-     * @param \Closure(TItem): int                    $countExtractor
+     * @param Closure(TItem): int                     $weightExtractor
+     * @param Closure(TItem): int                     $countExtractor
      * @param CountedItemFilterInterface<TItem>       $filter
      * @param SelectorBundleFactoryInterface          $bundleFactory
      * @param RandomizerInterface                     $randomizer
      * @return self<TItem>
+     * @throws InvalidArgumentException if no items remain after filtering
      */
     public static function of(
         iterable $items,
-        \Closure $weightExtractor,
-        \Closure $countExtractor,
+        Closure $weightExtractor,
+        Closure $countExtractor,
         CountedItemFilterInterface $filter = new PositiveValueFilter(),
         SelectorBundleFactoryInterface $bundleFactory = new FenwickSelectorBundleFactory(),
         RandomizerInterface $randomizer = new SecureRandomizer(),
@@ -82,15 +76,13 @@ final class BoxPool implements ExhaustiblePoolInterface
         }
 
         if ($filteredItems === []) {
-            throw new AllItemsFilteredException('Cannot create a BoxPool: no items remain after filtering.');
+            throw new InvalidArgumentException('Cannot create a BoxPool: no items remain after filtering.');
         }
-
-        $bundle = $bundleFactory->create($filteredWeights);
 
         return new self(
             $filteredItems,
             $filteredCounts,
-            $bundle->builder,
+            $bundleFactory->create($filteredWeights),
             $randomizer,
         );
     }
@@ -116,11 +108,7 @@ final class BoxPool implements ExhaustiblePoolInterface
         $item          = $this->items[$selectedIndex];
         $newCount      = $this->counts[$selectedIndex] - 1;
 
-        // Intermediate variable required: direct property index-assignment widens
-        // list<int> to non-empty-array<int,int> in PHPStan; array_values() re-narrows.
-        $counts                 = $this->counts;
-        $counts[$selectedIndex] = $newCount;
-        $this->counts           = array_values($counts);
+        $this->counts[$selectedIndex] = $newCount;
 
         if ($newCount === 0) {
             $this->builder->subtract($selectedIndex);
@@ -140,7 +128,7 @@ final class BoxPool implements ExhaustiblePoolInterface
 
         $results = [];
 
-        for ($i = 0; $i < $count && !$this->isEmpty(); $i++) {
+        while (!$this->isEmpty() && count($results) < $count) {
             $results[] = $this->draw();
         }
 

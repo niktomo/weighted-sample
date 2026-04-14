@@ -4,19 +4,23 @@ declare(strict_types=1);
 
 namespace WeightedSample\Tests\Unit;
 
+use InvalidArgumentException;
+use OverflowException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
-use WeightedSample\Randomizer\RandomizerInterface;
 use WeightedSample\Randomizer\SeededRandomizer;
 use WeightedSample\Selector\AliasTableSelector;
 use WeightedSample\Selector\SelectorInterface;
+use WeightedSample\Tests\Support\RandomizerHelpers;
 
 class AliasTableSelectorTest extends TestCase
 {
+    use RandomizerHelpers;
+
     public function test_build_throws_on_empty_weights(): void
     {
         // Arrange & Act & Assert
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(InvalidArgumentException::class);
         AliasTableSelector::build([]);
     }
 
@@ -25,7 +29,7 @@ class AliasTableSelectorTest extends TestCase
     public function test_build_throws_on_non_positive_weight(array $weights): void
     {
         // Arrange & Act & Assert
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(InvalidArgumentException::class);
         AliasTableSelector::build($weights);
     }
 
@@ -47,7 +51,7 @@ class AliasTableSelectorTest extends TestCase
         $bigWeight = intdiv(\PHP_INT_MAX, 3);
 
         // Act & Assert
-        $this->expectException(\OverflowException::class);
+        $this->expectException(OverflowException::class);
         AliasTableSelector::build([$bigWeight, $bigWeight, $bigWeight]);
     }
 
@@ -67,12 +71,10 @@ class AliasTableSelectorTest extends TestCase
         $randomizer = new SeededRandomizer(42);
 
         // Act & Assert — 100回引いてすべて有効なインデックスであること
-        $result1 = $selector->pick($randomizer);
-        $result2 = $selector->pick($randomizer);
-        $result3 = $selector->pick($randomizer);
-        $this->assertContains($result1, [0, 1, 2], '1回目の pick が有効なインデックスを返すこと');
-        $this->assertContains($result2, [0, 1, 2], '2回目の pick が有効なインデックスを返すこと');
-        $this->assertContains($result3, [0, 1, 2], '3回目の pick が有効なインデックスを返すこと');
+        for ($i = 0; $i < 100; $i++) {
+            $result = $selector->pick($randomizer);
+            $this->assertContains($result, [0, 1, 2], "{$i}回目の pick が有効なインデックスを返すこと");
+        }
     }
 
     public function test_single_item_always_returns_zero(): void
@@ -152,7 +154,6 @@ class AliasTableSelectorTest extends TestCase
     public function test_pick_distribution_matches_expected_proportions(): void
     {
         // Arrange — 重み [1, 9, 90] で 100000 回。期待値: 1%, 9%, 90%
-        // 3σ ≈ 0.3% なので delta=0.5% は保守的に十分安全
         $selector   = AliasTableSelector::build([1, 9, 90]);
         $randomizer = new SeededRandomizer(42);
         $counts     = [0, 0, 0];
@@ -163,29 +164,23 @@ class AliasTableSelectorTest extends TestCase
             $counts[$selector->pick($randomizer)]++;
         }
 
-        // Assert
+        // Assert — 3σ ≈ 0.3% なので delta=0.5% は保守的に十分安全
         $this->assertEqualsWithDelta(1.0, $counts[0] / $draws * 100, 0.5, 'index 0 (weight=1) の出現率が 1% ±0.5% の範囲内であること');
         $this->assertEqualsWithDelta(9.0, $counts[1] / $draws * 100, 0.5, 'index 1 (weight=9) の出現率が 9% ±0.5% の範囲内であること');
         $this->assertEqualsWithDelta(90.0, $counts[2] / $draws * 100, 0.5, 'index 2 (weight=90) の出現率が 90% ±0.5% の範囲内であること');
     }
 
-    /**
-     * @param int ...$values
-     */
-    private function sequenceRandomizer(int ...$values): RandomizerInterface
+    public function test_pick_boundary_at_maximum_random_value(): void
     {
-        return new class (array_values($values)) implements RandomizerInterface {
-            private int $position = 0;
+        // Arrange — weights=[10, 90]: n=2, W=100, n×W=200
+        //   最大乱数 r=199 → column=intdiv(199,100)=1, coinValue=199%100=99
+        //   threshold[1]=W=100（alias未使用） → 99 < 100 → index 1 が返ること
+        $selector = AliasTableSelector::build([10, 90]);
 
-            /** @param list<int> $values */
-            public function __construct(private readonly array $values)
-            {
-            }
+        // Act
+        $result = $selector->pick($this->sequenceRandomizer(199));
 
-            public function next(int $max): int
-            {
-                return $this->values[$this->position++];
-            }
-        };
+        // Assert — r=n×W-1（最大乱数）で正しいインデックスが返ること
+        $this->assertSame(1, $result, 'r=n×W-1（最大乱数）で index 1 が返ること');
     }
 }

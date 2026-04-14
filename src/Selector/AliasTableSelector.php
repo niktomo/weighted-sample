@@ -32,6 +32,8 @@ use WeightedSample\Randomizer\RandomizerInterface;
  *
  * Use this selector when draw() is called frequently on large item sets.
  * For small sets or infrequent draws, PrefixSumSelector (integer-only) is sufficient.
+ *
+ * @see https://www.keithschwarz.com/darts-dice-coins/ Vose's Alias Method explanation and proof of correctness
  */
 final readonly class AliasTableSelector implements SelectorInterface
 {
@@ -57,15 +59,24 @@ final readonly class AliasTableSelector implements SelectorInterface
             throw new InvalidArgumentException('weights must not be empty.');
         }
 
-        $total = array_sum($weights);
+        $total = 0;
+        foreach ($weights as $w) {
+            if ($total > PHP_INT_MAX - $w) {
+                throw new OverflowException(
+                    'Total weight would exceed PHP_INT_MAX; reduce item count or individual weights.',
+                );
+            }
+            $total += $w;
+        }
         $this->total = $total;
 
         // Vose's algorithm uses prob[l] + prob[s] as an intermediate value.
         // prob[l] ≤ n × max(w[i]) ≤ n × W, and prob[s] < W, so the sum is at most (n+1) × W.
-        // Require (n+1) × W ≤ PHP_INT_MAX: throw when n ≥ ⌊PHP_INT_MAX / W⌋.
+        // Require (n+1) × W ≤ PHP_INT_MAX: throw when n ≥ ⌊PHP_INT_MAX / W⌋,
+        // because then n × W ≥ PHP_INT_MAX − W + 1, meaning (n+1) × W ≥ PHP_INT_MAX + 1.
         if ($total > 0 && $itemCount >= intdiv(\PHP_INT_MAX, $total)) {
             throw new OverflowException(
-                "n × W ({$itemCount} × {$total}) would exceed PHP_INT_MAX. Reduce item count or total weight.",
+                "Too many items or total weight is too large (n={$itemCount}, totalWeight={$total}). Reduce the number of items or lower individual weights.",
             );
         }
 
@@ -104,13 +115,13 @@ final readonly class AliasTableSelector implements SelectorInterface
         // Pass 2: Vose's algorithm with pure integer arithmetic.
         //   threshold[s] = prob[s]  — exact, no float conversion or round() needed.
         //   prob[l]      = prob[l] + prob[s] − W  — strictly decreasing, stays in [1, n×W].
-        //   Safety clamp [1, W]: all weight > 0 items are reachable from their own column.
-        //   With exact integer arithmetic this is purely defensive; no ±1/W bias exists.
+        //   With exact integer arithmetic, prob[s] is always in [1, W-1] for any small item
+        //   (all weights are positive integers, validated above). No clamp is needed.
         while ($small !== [] && $large !== []) {
             $smallIndex = array_pop($small);
             $largeIndex = array_pop($large);
 
-            $threshold[$smallIndex] = max(1, min($total, $prob[$smallIndex]));
+            $threshold[$smallIndex] = $prob[$smallIndex];
             $alias[$smallIndex]     = $largeIndex;
 
             $prob[$largeIndex] = $prob[$largeIndex] + $prob[$smallIndex] - $total;
@@ -131,7 +142,7 @@ final readonly class AliasTableSelector implements SelectorInterface
      */
     public static function build(array $weights): static
     {
-        return new static($weights);
+        return new self($weights);
     }
 
     public function pick(RandomizerInterface $randomizer): int

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace WeightedSample\Pool;
 
+use InvalidArgumentException;
+
 /**
  * A pool that can be exhausted. draw() removes or consumes items over time.
  *
@@ -23,7 +25,7 @@ interface ExhaustiblePoolInterface extends PoolInterface
      * Returns an empty list when $count is 0 or the pool is already empty.
      *
      * @return list<T>
-     * @throws \InvalidArgumentException if $count is negative
+     * @throws InvalidArgumentException if $count is negative
      */
     public function drawMany(int $count): array;
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace WeightedSample\Tests\Unit;
 
+use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
 use WeightedSample\Builder\FenwickSelectorBundleFactory;
 use WeightedSample\Builder\RebuildSelectorBundleFactory;
@@ -11,11 +12,13 @@ use WeightedSample\Exception\EmptyPoolException;
 use WeightedSample\Filter\StrictValueFilter;
 use WeightedSample\Pool\BoxPool;
 use WeightedSample\Pool\ExhaustiblePoolInterface;
-use WeightedSample\Randomizer\RandomizerInterface;
 use WeightedSample\SelectorBundleFactoryInterface;
+use WeightedSample\Tests\Support\RandomizerHelpers;
 
 class BoxPoolTest extends TestCase
 {
+    use RandomizerHelpers;
+
     // -------------------------------------------------------------------------
     // 構築
     // -------------------------------------------------------------------------
@@ -37,7 +40,7 @@ class BoxPoolTest extends TestCase
     public function test_throws_on_empty_items(): void
     {
         // Assert
-        $this->expectException(EmptyPoolException::class);
+        $this->expectException(InvalidArgumentException::class);
 
         // Act
         BoxPool::of([], fn (array $item) => $item['weight'], fn (array $item) => $item['count']);
@@ -64,8 +67,8 @@ class BoxPoolTest extends TestCase
             ['id' => 2, 'weight' => 90, 'count' => 0],
         ];
 
-        // Assert
-        $this->expectException(EmptyPoolException::class);
+        // Assert — 構築時の InvalidArgumentException は実行時の EmptyPoolException と区別されること
+        $this->expectException(InvalidArgumentException::class);
 
         // Act
         BoxPool::of($items, fn (array $item) => $item['weight'], fn (array $item) => $item['count']);
@@ -77,7 +80,7 @@ class BoxPoolTest extends TestCase
         $items = [['id' => 1, 'weight' => 10, 'count' => 0]];
 
         // Assert
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(InvalidArgumentException::class);
 
         // Act
         BoxPool::of($items, fn (array $item) => $item['weight'], fn (array $item) => $item['count'], filter: new StrictValueFilter());
@@ -440,7 +443,8 @@ class BoxPoolTest extends TestCase
         );
 
         // Assert
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('$count must be non-negative.');
 
         // Act
         $pool->drawMany(-1);
@@ -456,7 +460,7 @@ class BoxPoolTest extends TestCase
         );
 
         // Assert
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(InvalidArgumentException::class);
 
         // Act
         $pool->drawMany(\PHP_INT_MIN);
@@ -484,17 +488,4 @@ class BoxPoolTest extends TestCase
     // ヘルパー
     // -------------------------------------------------------------------------
 
-    private function fixedRandomizer(int $value): RandomizerInterface
-    {
-        return new class ($value) implements RandomizerInterface {
-            public function __construct(private readonly int $value)
-            {
-            }
-
-            public function next(int $max): int
-            {
-                return min($this->value, $max - 1);
-            }
-        };
-    }
 }
