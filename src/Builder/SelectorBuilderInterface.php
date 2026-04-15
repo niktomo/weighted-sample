@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace WeightedSample\Builder;
 
 use InvalidArgumentException;
+use LogicException;
 use WeightedSample\Selector\SelectorInterface;
 use WeightedSample\TotalWeightQueryInterface;
 
@@ -53,11 +54,7 @@ interface SelectorBuilderInterface extends TotalWeightQueryInterface
      *
      * Must not be called when totalWeight() === 0.
      *
-     * Behaviour when totalWeight() === 0 is implementation-defined:
-     *   - RebuildSelectorBuilder: throws LogicException (detected at rebuild time).
-     *   - FenwickSelectorBuilder: returns the selector; pick() will throw UnderflowException.
-     *
-     * Callers must guard with totalWeight() === 0 before invoking this method.
+     * @throws LogicException if called when totalWeight() === 0
      */
     public function currentSelector(): SelectorInterface;
 }
