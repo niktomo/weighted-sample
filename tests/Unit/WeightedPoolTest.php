@@ -27,7 +27,7 @@ class WeightedPoolTest extends TestCase
         // Arrange & Act
         $pool = WeightedPool::of(
             [['name' => 'A', 'weight' => 10]],
-            fn (array $item) => $item['weight'],
+            static fn (array $item) => $item['weight'],
         );
 
         // Assert
@@ -41,7 +41,7 @@ class WeightedPoolTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
 
         // Act
-        WeightedPool::of([], fn (array $item) => $item['weight']);
+        WeightedPool::of([], static fn (array $item) => $item['weight']);
     }
 
     public function test_zero_weight_items_are_excluded_by_default(): void
@@ -51,7 +51,7 @@ class WeightedPoolTest extends TestCase
             ['name' => 'A', 'weight' => 0],
             ['name' => 'B', 'weight' => 10],
         ];
-        $pool = WeightedPool::of($items, fn (array $item) => $item['weight'], randomizer: $this->fixedRandomizer(0));
+        $pool = WeightedPool::of($items, static fn (array $item) => $item['weight'], randomizer: $this->fixedRandomizer(0));
 
         // Act & Assert — weight=0 の A は除外され B のみ残ること
         $this->assertSame('B', $pool->draw()['name'], 'weight=0 のアイテムが除外され残ったアイテムが返ること');
@@ -69,7 +69,7 @@ class WeightedPoolTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
 
         // Act
-        WeightedPool::of($items, fn (array $item) => $item['weight']);
+        WeightedPool::of($items, static fn (array $item) => $item['weight']);
     }
 
     public function test_strict_filter_throws_on_zero_weight(): void
@@ -81,7 +81,7 @@ class WeightedPoolTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
 
         // Act
-        WeightedPool::of($items, fn (array $item) => $item['weight'], filter: new StrictValueFilter());
+        WeightedPool::of($items, static fn (array $item) => $item['weight'], filter: new StrictValueFilter());
     }
 
     // -------------------------------------------------------------------------
@@ -109,7 +109,7 @@ class WeightedPoolTest extends TestCase
         ];
         $pool = WeightedPool::of(
             $items,
-            fn (array $item) => $item['weight'],
+            static fn (array $item) => $item['weight'],
             randomizer: $this->fixedRandomizer($randValue),
         );
 
@@ -127,7 +127,7 @@ class WeightedPoolTest extends TestCase
             ['name' => 'A', 'weight' => 50],
             ['name' => 'B', 'weight' => 50],
         ];
-        $pool = WeightedPool::of($items, fn (array $item) => $item['weight']);
+        $pool = WeightedPool::of($items, static fn (array $item) => $item['weight']);
 
         // Act — 複数回 draw しても同じ pool から引ける
         $first  = $pool->draw();
@@ -155,7 +155,7 @@ class WeightedPoolTest extends TestCase
 
         $pool = WeightedPool::of(
             [$a, $b],
-            fn ($obj) => $obj->weight,
+            static fn ($obj) => $obj->weight,
             randomizer: $this->fixedRandomizer(0),
         );
 
@@ -179,7 +179,7 @@ class WeightedPoolTest extends TestCase
         ];
         $pool = WeightedPool::of(
             $items,
-            fn (array $item) => $item['weight'],
+            static fn (array $item) => $item['weight'],
             selectorFactory: new AliasTableSelectorFactory(),
         );
 
@@ -198,7 +198,7 @@ class WeightedPoolTest extends TestCase
 
         $pool = WeightedPool::of(
             [['name' => 'A', 'weight' => 10]],
-            fn (array $item) => $item['weight'],
+            static fn (array $item) => $item['weight'],
             selectorFactory: $factory,
         );
 
@@ -220,7 +220,7 @@ class WeightedPoolTest extends TestCase
         })();
 
         // Act
-        $pool = WeightedPool::of($generator, fn (array $item) => $item['weight']);
+        $pool = WeightedPool::of($generator, static fn (array $item) => $item['weight']);
 
         // Assert — ジェネレータ入力でも正常にプールが構築されること
         $this->assertInstanceOf(WeightedPool::class, $pool, 'Generator を渡してもプールが生成されること');

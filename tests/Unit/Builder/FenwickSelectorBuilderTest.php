@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace WeightedSample\Tests\Unit\Builder;
 
+use LogicException;
 use PHPUnit\Framework\TestCase;
 use WeightedSample\Builder\FenwickSelectorBuilder;
 use WeightedSample\Builder\SelectorBuilderInterface;
@@ -76,6 +77,18 @@ class FenwickSelectorBuilderTest extends TestCase
 
         // Act & Assert
         $this->assertSame($selector, $builder->currentSelector(), 'currentSelector() がコンストラクタに渡した FenwickTreeSelector を返すこと');
+    }
+
+    public function test_current_selector_throws_logic_exception_when_all_subtracted(): void
+    {
+        // Arrange — 全アイテムを subtract して totalWeight=0 にする
+        $builder = new FenwickSelectorBuilder(FenwickTreeSelector::build([5, 3]));
+        $builder->subtract(0);
+        $builder->subtract(1);
+
+        // Act & Assert — totalWeight=0 のとき currentSelector() は LogicException を投げること
+        $this->expectException(LogicException::class);
+        $builder->currentSelector();
     }
 
     // -------------------------------------------------------------------------
