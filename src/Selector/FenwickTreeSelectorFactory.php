@@ -14,7 +14,7 @@ use WeightedSample\SelectorFactoryInterface;
  * Update: O(log n) — point update via SelectorBuilderInterface.
  * Recommended for BoxPool (default).
  */
-final class FenwickTreeSelectorFactory implements SelectorFactoryInterface
+final readonly class FenwickTreeSelectorFactory implements SelectorFactoryInterface
 {
     /**
      * @param list<int> $weights

@@ -125,6 +125,19 @@ class SeededRandomizerTest extends TestCase
         $this->assertSame(0, $randomizer->next(1), 'seed=0 は有効な最小値であること');
     }
 
+    public function test_seed_one_below_max_is_valid(): void
+    {
+        // Arrange & Act — 4294967294 = 2^32 - 2 は有効な境界直下の値
+        $randomizer = new SeededRandomizer(4_294_967_294);
+
+        // Assert
+        $this->assertInstanceOf(
+            RandomizerInterface::class,
+            $randomizer,
+            'seed=4294967294 (MAX_SEED - 1) は有効であること',
+        );
+    }
+
     public function test_seed_max_uint32_is_valid(): void
     {
         // Arrange & Act — 4294967295 = 2^32 - 1 は有効な最大値

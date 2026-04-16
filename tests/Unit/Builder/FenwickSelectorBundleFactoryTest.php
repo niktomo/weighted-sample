@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace WeightedSample\Tests\Unit\Builder;
 
 use InvalidArgumentException;
+use LogicException;
 use OverflowException;
 use PHPUnit\Framework\TestCase;
 use WeightedSample\Builder\FenwickSelectorBundleFactory;
@@ -111,6 +112,18 @@ class FenwickSelectorBundleFactoryTest extends TestCase
 
         // Assert — totalWeight が即時更新されていること
         $this->assertSame(5, $builder->totalWeight(), 'subtract 後に totalWeight が正しく更新されること');
+    }
+
+    public function test_current_selector_throws_logic_exception_when_all_subtracted(): void
+    {
+        // Arrange — 1アイテムをすべて差し引いて totalWeight=0 にする
+        $factory = new FenwickSelectorBundleFactory();
+        $builder = $factory->create([5]);
+        $builder->subtract(0);
+
+        // Act & Assert — totalWeight=0 の状態で currentSelector() を呼ぶと LogicException
+        $this->expectException(LogicException::class);
+        $builder->currentSelector();
     }
 
     public function test_each_create_call_returns_independent_builder(): void

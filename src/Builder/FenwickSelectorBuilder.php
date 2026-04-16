@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace WeightedSample\Builder;
 
 use InvalidArgumentException;
+use LogicException;
 use WeightedSample\ItemExclusionObserverInterface;
 use WeightedSample\Selector\SelectorInterface;
 use WeightedSample\TotalWeightQueryInterface;
@@ -23,7 +24,7 @@ use WeightedSample\TotalWeightQueryInterface;
  *
  * totalWeight() delegates to TotalWeightQueryInterface::totalWeight(), which is O(1).
  */
-final class FenwickSelectorBuilder implements SelectorBuilderInterface
+final readonly class FenwickSelectorBuilder implements SelectorBuilderInterface
 {
     public function __construct(
         private readonly SelectorInterface&ItemExclusionObserverInterface&TotalWeightQueryInterface $selector,
@@ -41,8 +42,17 @@ final class FenwickSelectorBuilder implements SelectorBuilderInterface
         $this->selector->onItemExcluded($index);  // O(log n) via observer
     }
 
+    /**
+     * @throws LogicException if totalWeight() === 0
+     */
     public function currentSelector(): SelectorInterface
     {
+        if ($this->totalWeight() === 0) {
+            throw new LogicException(
+                'currentSelector() must not be called when totalWeight() === 0.',
+            );
+        }
+
         return $this->selector;
     }
 

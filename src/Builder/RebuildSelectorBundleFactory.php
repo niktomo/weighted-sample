@@ -14,7 +14,7 @@ use WeightedSample\SelectorFactoryInterface;
  * Defaults to PrefixSumSelectorFactory. Inject AliasTableSelectorFactory for
  * WeightedPool-style O(1) picks (though note that Alias rebuild is O(n) per subtract).
  */
-final class RebuildSelectorBundleFactory implements SelectorBundleFactoryInterface
+final readonly class RebuildSelectorBundleFactory implements SelectorBundleFactoryInterface
 {
     public function __construct(
         private readonly SelectorFactoryInterface $selectorFactory = new PrefixSumSelectorFactory(),

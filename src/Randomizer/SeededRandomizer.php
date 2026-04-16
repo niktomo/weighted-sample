@@ -11,9 +11,22 @@ use Random\Randomizer;
 /**
  * Deterministic randomizer backed by \Random\Engine\Mt19937.
  *
- * **NEVER USE IN PRODUCTION.** Mt19937 is NOT cryptographically secure and produces
- * predictable sequences. Use SeededRandomizer only in tests or reproducible simulations.
- * For production draws, inject SecureRandomizer (the default) instead.
+ * **NEVER USE IN PRODUCTION.** Mt19937 has two critical security weaknesses:
+ *
+ *   1. **State reconstruction** — an attacker who observes 624 consecutive 32-bit outputs
+ *      can fully reconstruct the 19,937-bit internal state and predict every future value.
+ *      In a web context, even a handful of draw results in an HTTP response may be enough
+ *      to narrow the seed space to a brute-forceable range.
+ *
+ *   2. **Seed predictability** — seeds derived from timestamps or sequential counters
+ *      (e.g. `time()`, `microtime()`) reduce the effective key space to milliseconds or
+ *      seconds, making brute-force trivial.
+ *
+ * Use SeededRandomizer ONLY for:
+ *   - Unit / feature tests (deterministic, reproducible draws)
+ *   - Offline simulations (replay with a stored seed)
+ *
+ * For all production draws, inject SecureRandomizer (the default) instead.
  *
  * Seed must be a non-negative 32-bit integer in [0, 4 294 967 295].
  * PHP's Mt19937 accepts a 64-bit int but truncates silently to uint32 internally;

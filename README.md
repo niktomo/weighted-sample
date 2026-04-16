@@ -49,7 +49,7 @@ $pool = WeightedPool::of(
         ['name' => 'SR',  'weight' => 9],
         ['name' => 'R',   'weight' => 90],
     ],
-    fn(array $item) => $item['weight'],
+    static fn (array $item): int => $item['weight'],
 );
 
 $result = $pool->draw(); // returns one item — 90% chance of R, 9% SR, 1% SSR
@@ -61,10 +61,10 @@ The closure can reference any property or method:
 use WeightedSample\Pool\WeightedPool;
 
 // Object with a method
-$pool = WeightedPool::of($prizes, fn(Prize $p): int => $p->rarityWeight());
+$pool = WeightedPool::of($prizes, static fn (Prize $p): int => $p->rarityWeight());
 
 // Scalar — item IS the weight
-$pool = WeightedPool::of([10, 30, 60], fn(int $w) => $w);
+$pool = WeightedPool::of([10, 30, 60], static fn (int $w): int => $w);
 ```
 
 ---
@@ -83,11 +83,11 @@ Items can be any shape — just point the closures at the right fields:
 ```php
 use WeightedSample\Pool\BoxPool;
 
-// fn($item) => weight,  fn($item) => stock
+// static fn (array $item): int => weight,  static fn (array $item): int => stock
 $pool = BoxPool::of(
     $items,
-    fn(array $item) => $item['weight'],  // draw probability
-    fn(array $item) => $item['stock'],   // how many times it can be drawn
+    static fn (array $item): int => $item['weight'],  // draw probability
+    static fn (array $item): int => $item['stock'],   // how many times it can be drawn
 );
 ```
 
@@ -107,10 +107,10 @@ $items = [
     ['name' => 'J', 'weight' => 40, 'stock' => 10],
 ];
 
-$newBox = fn() => BoxPool::of(
+$newBox = static fn (): BoxPool => BoxPool::of(
     $items,
-    fn(array $item) => $item['weight'],
-    fn(array $item) => $item['stock'],
+    static fn (array $item): int => $item['weight'],
+    static fn (array $item): int => $item['stock'],
 );
 
 // The box holds 55 prizes. A player draws 50 at a time, 3 rounds.
@@ -143,7 +143,7 @@ If the pool empties before `$count` is reached, it returns only what was drawn �
 ```php
 use WeightedSample\Pool\BoxPool;
 
-$pool = BoxPool::of($items, fn($i) => $i['weight'], fn($i) => $i['stock']);
+$pool = BoxPool::of($items, static fn (array $i): int => $i['weight'], static fn (array $i): int => $i['stock']);
 
 $prizes = $pool->drawMany(10); // up to 10 items; fewer if pool runs dry
 ```
@@ -156,6 +156,7 @@ $prizes = $pool->drawMany(10); // up to 10 items; fewer if pool runs dry
 - Each `draw()` decrements the internal stock counter for the selected item.
 - When a counter reaches zero, that item type is removed from the pool.
 - The array you passed to `BoxPool::of()` is never touched.
+- `BoxPool` is **mutable by design**: each `draw()` modifies internal state. It cannot be shared across concurrent contexts without external synchronization.
 
 ---
 
@@ -173,7 +174,7 @@ items with `stock ≤ 0`. If all items are excluded, `InvalidArgumentException` 
 use WeightedSample\Pool\WeightedPool;
 
 // weight=0 items are excluded automatically — no exception thrown
-$pool = WeightedPool::of($items, fn(array $item) => $item['weight']);
+$pool = WeightedPool::of($items, static fn (array $item): int => $item['weight']);
 ```
 
 ### StrictValueFilter (throw on invalid)
@@ -185,7 +186,7 @@ use WeightedSample\Pool\WeightedPool;
 // Throws InvalidArgumentException if any item has weight ≤ 0
 $pool = WeightedPool::of(
     $items,
-    fn(array $item) => $item['weight'],
+    static fn (array $item): int => $item['weight'],
     filter: new StrictValueFilter(),
 );
 ```
@@ -207,7 +208,7 @@ $enabledFilter = new class implements ItemFilterInterface {
 
 $pool = WeightedPool::of(
     $items,
-    fn(array $item) => $item['weight'],
+    static fn (array $item): int => $item['weight'],
     filter: new CompositeFilter([new PositiveValueFilter(), $enabledFilter]),
 );
 ```
@@ -235,8 +236,8 @@ $activeFilter = new class implements CountedItemFilterInterface {
 
 $pool = BoxPool::of(
     $items,
-    fn(array $item) => $item['weight'],
-    fn(array $item) => $item['stock'],
+    static fn (array $item): int => $item['weight'],
+    static fn (array $item): int => $item['stock'],
     filter: $activeFilter,
 );
 ```
@@ -263,7 +264,7 @@ use WeightedSample\Pool\WeightedPool;
 // Construction-time: InvalidArgumentException when no items survive the filter.
 // PositiveValueFilter (the default) excludes any item whose weight is 0.
 try {
-    $pool = WeightedPool::of($items, fn(array $item) => $item['weight']);
+    $pool = WeightedPool::of($items, static fn (array $item): int => $item['weight']);
 } catch (InvalidArgumentException $e) {
     // Bad input — every item was excluded. Check data or filter config.
     return;
@@ -297,7 +298,7 @@ function itemsFromDb(\PDOStatement $stmt): \Generator
     }
 }
 
-$pool = WeightedPool::of(itemsFromDb($stmt), fn(array $row) => $row['weight']);
+$pool = WeightedPool::of(itemsFromDb($stmt), static fn (array $row): int => $row['weight']);
 ```
 
 Note: the pool itself stores all accepted items internally, so peak memory
@@ -315,7 +316,7 @@ use WeightedSample\Randomizer\SeededRandomizer;
 
 $pool = WeightedPool::of(
     $items,
-    fn(array $item) => $item['weight'],
+    static fn (array $item): int => $item['weight'],
     randomizer: new SeededRandomizer(42), // fixed seed
 );
 
@@ -333,15 +334,25 @@ The default (no seed) uses `\Random\Engine\Secure` for cryptographically safe ra
 > - [ ] The seed is not shared across users or requests (same seed → identical sequence)
 > - [ ] Users cannot observe enough outputs to reconstruct the state (624 consecutive 32-bit outputs suffice)
 >
+> **Why 624 outputs matter:** Mt19937 maintains a 624-element internal state. An attacker
+> who collects 624 consecutive 32-bit outputs (e.g. from repeated API responses containing
+> draw results) can fully reconstruct the internal state using the MT19937 state-recovery
+> algorithm, and then predict every future output. Even partial observation (e.g. the item
+> tier rather than the raw index) significantly narrows the search space.
+>
 > If any box is unchecked, use `SecureRandomizer` (the default) instead.
 
 **Safe seed derivation** (offline simulations only): derive the seed from a high-entropy source rather than a sequential counter or timestamp.
 
 ```php
-// Derive a reproducible seed from a unique, high-entropy identifier
-$seed = unpack('N', random_bytes(4))[1];         // one-off: random 32-bit seed
-// — or — bind it to a specific entity so results are reproducible per entity:
+// Bind the seed to a specific entity for per-entity reproducibility.
+// The same userId + campaignId always produces the same draw sequence:
 $seed = (int) hexdec(substr(hash('sha256', $userId . ':' . $campaignId), 0, 8));
+
+// If you need a one-off reproducible sequence, generate the seed once, persist it,
+// then reuse it to replay the exact same draws later:
+$seed = unpack('N', random_bytes(4))[1]; // store this value — it is the key to replay
+// Note: if replay is not needed, use SecureRandomizer (the default) instead.
 ```
 
 ---
@@ -368,22 +379,22 @@ use WeightedSample\Randomizer\SeededRandomizer;
 use WeightedSample\Selector\AliasTableSelectorFactory;
 
 // Change the randomizer (e.g. for tests)
-$pool = WeightedPool::of($items, fn(array $i) => $i['weight'],
+$pool = WeightedPool::of($items, static fn (array $i): int => $i['weight'],
     randomizer: new SeededRandomizer(42),
 );
 
 // Change the filter
-$pool = WeightedPool::of($items, fn(array $i) => $i['weight'],
+$pool = WeightedPool::of($items, static fn (array $i): int => $i['weight'],
     filter: new StrictValueFilter(),
 );
 
 // Change the selector algorithm (WeightedPool)
-$pool = WeightedPool::of($items, fn(array $i) => $i['weight'],
+$pool = WeightedPool::of($items, static fn (array $i): int => $i['weight'],
     selectorFactory: new AliasTableSelectorFactory(),
 );
 
 // Change the builder strategy (BoxPool)
-$pool = BoxPool::of($items, fn(array $i) => $i['weight'], fn(array $i) => $i['stock'],
+$pool = BoxPool::of($items, static fn (array $i): int => $i['weight'], static fn (array $i): int => $i['stock'],
     bundleFactory: new FenwickSelectorBundleFactory(), // default; shown for clarity
 );
 ```
@@ -435,23 +446,23 @@ use WeightedSample\Builder\RebuildSelectorBundleFactory;
 // WeightedPool with many repeated draws — use Alias for O(1) pick
 $pool = WeightedPool::of(
     $items,
-    fn(array $item) => $item['weight'],
+    static fn (array $item): int => $item['weight'],
     selectorFactory: new AliasTableSelectorFactory(),
 );
 
 // BoxPool with large N — FenwickSelectorBundleFactory is the default (O(n log n) total)
 $pool = BoxPool::of(
     $items,
-    fn(array $item) => $item['weight'],
-    fn(array $item) => $item['stock'],
+    static fn (array $item): int => $item['weight'],
+    static fn (array $item): int => $item['stock'],
     bundleFactory: new FenwickSelectorBundleFactory(),
 );
 
 // BoxPool with AliasTable pick (O(1)) — use RebuildSelectorBundleFactory
 $pool = BoxPool::of(
     $items,
-    fn(array $item) => $item['weight'],
-    fn(array $item) => $item['stock'],
+    static fn (array $item): int => $item['weight'],
+    static fn (array $item): int => $item['stock'],
     bundleFactory: new RebuildSelectorBundleFactory(new AliasTableSelectorFactory()),
 );
 ```
@@ -497,6 +508,8 @@ Build cost amortises once you exceed the break-even draw count:
 
 **Pros:** O(log n) point update on exhaustion — no full rebuild. Total draw-all cost is O(n log n), not O(n²). Scales to N=10,000+.  
 **Cons:** Pick is slightly slower than PrefixSum for immutable pools (Fenwick tree descent vs binary search).
+
+`FenwickTreeSelector` is **mutable** — it updates its internal Fenwick tree in-place on each `subtract()`. This is intentional: in-place mutation enables O(log n) updates without object allocation, which is what makes BoxPool efficient at scale.
 
 `FenwickSelectorBundleFactory` pairs a `FenwickTreeSelector` with a `FenwickSelectorBuilder` that share the **same instance**. When an item is exhausted, `subtract()` calls `update(index, 0)` on the shared tree in O(log n) — no object creation, no array copy.
 
@@ -601,7 +614,7 @@ the exact return type of `draw()` through the pool.
 use WeightedSample\Pool\WeightedPool;
 
 /** @var WeightedPool<array{name: string, weight: int}> $pool */
-$pool = WeightedPool::of($items, fn(array $item) => $item['weight']);
+$pool = WeightedPool::of($items, static fn (array $item): int => $item['weight']);
 
 $item = $pool->draw(); // PHPStan infers array{name: string, weight: int}
 ```

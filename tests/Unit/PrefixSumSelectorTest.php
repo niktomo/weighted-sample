@@ -120,6 +120,19 @@ class PrefixSumSelectorTest extends TestCase
         $this->assertSame(1, $selector->pick($this->fixedRandomizer(10)), 'r=10 のとき index 1 が返ること（第2アイテムの帯の先頭）');
     }
 
+    public function test_pick_boundary_between_second_and_third_item(): void
+    {
+        // Arrange — weights=[10, 30, 60], total=100
+        //   prefix sums: [10, 40, 100]
+        //   r=39 → prefixSums[0]=10 ≤ 39, prefixSums[1]=40 > 39 → index 1
+        //   r=40 → prefixSums[0]=10 ≤ 40, prefixSums[1]=40 ≤ 40 → index 2
+        $selector = PrefixSumSelector::build([10, 30, 60]);
+
+        // Act & Assert
+        $this->assertSame(1, $selector->pick($this->fixedRandomizer(39)), 'r=39 のとき index 1 が返ること（第2アイテムの帯の末尾）');
+        $this->assertSame(2, $selector->pick($this->fixedRandomizer(40)), 'r=40 のとき index 2 が返ること（第3アイテムの帯の先頭）');
+    }
+
     public function test_all_items_appear_in_sufficient_draws(): void
     {
         // Arrange — 重み [1, 9, 90] で 10000 回引いたとき全アイテムが出ること

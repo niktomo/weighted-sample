@@ -129,6 +129,8 @@ final class BoxPool implements ExhaustiblePoolInterface
         $results = [];
         $drawn   = 0;
 
+        // $drawn never reaches PHP_INT_MAX in practice: the pool exhausts long before
+        // a pool could hold PHP_INT_MAX items, so $drawn++ overflow is unreachable.
         while (!$this->isEmpty() && $drawn < $count) {
             $results[] = $this->draw();
             $drawn++;

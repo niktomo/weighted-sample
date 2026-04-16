@@ -13,7 +13,7 @@ use InvalidArgumentException;
  * @template T
  * @implements CountedItemFilterInterface<T>
  */
-final class StrictValueFilter implements CountedItemFilterInterface
+final readonly class StrictValueFilter implements CountedItemFilterInterface
 {
     public function accepts(mixed $item, int $weight): bool
     {

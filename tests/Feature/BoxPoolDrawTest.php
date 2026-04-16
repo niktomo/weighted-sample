@@ -19,7 +19,7 @@ class BoxPoolDrawTest extends TestCase
             ['id' => 2, 'weight' => 20, 'count' => 2],
             ['id' => 3, 'weight' => 70, 'count' => 3],
         ];
-        $pool = BoxPool::of($items, fn (array $item) => $item['weight'], fn (array $item) => $item['count']);
+        $pool = BoxPool::of($items, static fn (array $item): int => $item['weight'], static fn (array $item): int => $item['count']);
 
         // When: 6回引く
         $drawn = [
@@ -43,7 +43,7 @@ class BoxPoolDrawTest extends TestCase
             ['id' => 1, 'weight' => 50, 'count' => 1],
             ['id' => 2, 'weight' => 50, 'count' => 2],
         ];
-        $pool = BoxPool::of($items, fn (array $item) => $item['weight'], fn (array $item) => $item['count'], randomizer: new SeededRandomizer(1));
+        $pool = BoxPool::of($items, static fn (array $item): int => $item['weight'], static fn (array $item): int => $item['count'], randomizer: new SeededRandomizer(1));
 
         // When: 3回引く
         $drawn = [
@@ -63,8 +63,8 @@ class BoxPoolDrawTest extends TestCase
         // Given: count 合計 = 2 の BoxPool
         $pool = BoxPool::of(
             [['id' => 1, 'weight' => 100, 'count' => 2]],
-            fn (array $item) => $item['weight'],
-            fn (array $item) => $item['count'],
+            static fn (array $item): int => $item['weight'],
+            static fn (array $item): int => $item['count'],
         );
 
         // When: 2回引いてプールを枯渇させる
@@ -87,7 +87,7 @@ class BoxPoolDrawTest extends TestCase
 
         // When: 同じ seed の2つのプールから全6回引く
         $draw = function (int $seed) use ($items): array {
-            $pool = BoxPool::of($items, fn (array $item) => $item['weight'], fn (array $item) => $item['count'], randomizer: new SeededRandomizer($seed));
+            $pool = BoxPool::of($items, static fn (array $item): int => $item['weight'], static fn (array $item): int => $item['count'], randomizer: new SeededRandomizer($seed));
 
             return [
                 $pool->draw()['id'],
@@ -117,7 +117,7 @@ class BoxPoolDrawTest extends TestCase
         // When: 10,000 試行して初回 draw が Gold である回数を数える
         // 各 trial に trial 番号をシードとして使い、再現性を確保する
         for ($trial = 0; $trial < $trials; $trial++) {
-            $pool = BoxPool::of($items, fn (array $item) => $item['weight'], fn (array $item) => $item['stock'], randomizer: new SeededRandomizer($trial));
+            $pool = BoxPool::of($items, static fn (array $item): int => $item['weight'], static fn (array $item): int => $item['stock'], randomizer: new SeededRandomizer($trial));
             if ($pool->draw()['id'] === 'Gold') {
                 $goldFirst++;
             }
@@ -150,7 +150,7 @@ class BoxPoolDrawTest extends TestCase
         // When: A が出るまで引き、A 除外後の次の draw を記録する
         // 各 trial に trial 番号をシードとして使い、再現性を確保する
         for ($trial = 0; $trial < $trials; $trial++) {
-            $pool = BoxPool::of($items, fn (array $item) => $item['weight'], fn (array $item) => $item['stock'], randomizer: new SeededRandomizer($trial));
+            $pool = BoxPool::of($items, static fn (array $item): int => $item['weight'], static fn (array $item): int => $item['stock'], randomizer: new SeededRandomizer($trial));
 
             while (! $pool->isEmpty() && $pool->draw()['id'] !== 'A') {
                 // A が出るまで消費

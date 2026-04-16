@@ -13,7 +13,7 @@ use WeightedSample\SelectorFactoryInterface;
  * Pick:  O(log n) — binary search on prefix sums.
  * Suitable for small to medium item sets.
  */
-final class PrefixSumSelectorFactory implements SelectorFactoryInterface
+final readonly class PrefixSumSelectorFactory implements SelectorFactoryInterface
 {
     /**
      * @param list<int> $weights

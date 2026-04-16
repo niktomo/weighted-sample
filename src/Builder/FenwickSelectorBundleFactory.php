@@ -16,7 +16,7 @@ use WeightedSample\SelectorBundleFactoryInterface;
  *
  * This is the default SelectorBundleFactory for BoxPool.
  */
-final class FenwickSelectorBundleFactory implements SelectorBundleFactoryInterface
+final readonly class FenwickSelectorBundleFactory implements SelectorBundleFactoryInterface
 {
     /**
      * @param list<int> $weights
