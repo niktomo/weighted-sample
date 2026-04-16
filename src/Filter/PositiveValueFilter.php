@@ -11,7 +11,7 @@ namespace WeightedSample\Filter;
  * @template T
  * @implements CountedItemFilterInterface<T>
  */
-final class PositiveValueFilter implements CountedItemFilterInterface
+final readonly class PositiveValueFilter implements CountedItemFilterInterface
 {
     public function accepts(mixed $item, int $weight): bool
     {

@@ -93,6 +93,15 @@ final readonly class AliasTableSelector implements SelectorInterface
     /**
      * Builds the threshold and alias arrays using Vose's integer-only alias method.
      *
+     * Equivalence with the float-based formulation (proof of correctness):
+     *   Float version: prob_f[i] = n × w[i] / W; pick returns column if coinValue_f < threshold_f[column]
+     *     where coinValue_f ∈ [0, 1) and threshold_f[s] = prob_f[s].
+     *   Integer version: prob[i] = n × w[i]; pick returns column if coinValue < threshold[column]
+     *     where coinValue ∈ [0, W) and threshold[s] = prob[s].
+     *   These are identical because coinValue / W ↔ coinValue_f and threshold[s] / W ↔ threshold_f[s].
+     *   Multiplying both sides of "coinValue_f < threshold_f[s]" by W gives "coinValue < threshold[s]".
+     *   All values are exact integers throughout — no float conversion or rounding at any step.
+     *
      * Pass 1: compute prob[i] = n × w[i] and partition into small / large buckets.
      *   threshold[i] defaults to W (column always wins, alias unused).
      *   alias[i]     defaults to i (safe sentinel; unreachable when threshold = W).

@@ -225,6 +225,30 @@ class FenwickTreeSelectorTest extends TestCase
         $this->assertSame(90, $selector->totalWeight(), 'update(0, 0) 後の totalWeight が 90 になること');
     }
 
+    public function test_update_reduces_weight_with_negative_delta(): void
+    {
+        // Arrange — weights=[10, 30, 60], index=0 の weight を 10→5 に減らす（負 delta）
+        $selector = FenwickTreeSelector::build([10, 30, 60]);
+
+        // Act
+        $selector->update(0, 5); // delta = 5 - 10 = -5
+
+        // Assert — totalWeight が 95 になること
+        $this->assertSame(95, $selector->totalWeight(), 'update(0, 5) 後の totalWeight が 95 になること（delta=-5）');
+
+        // index=0 はまだ選ばれること（weight=5 が残っているため）
+        $randomizer = new SeededRandomizer(42);
+        $counts     = [0, 0, 0];
+        $draws      = 100_000;
+        for ($i = 0; $i < $draws; $i++) {
+            $counts[$selector->pick($randomizer)]++;
+        }
+
+        // index=0 の出現率は約 5/95 ≈ 5.26%。delta=1.0% は保守的に安全
+        $this->assertGreaterThan(0, $counts[0], 'update(0, 5) 後も index 0 は選ばれること（weight=5 が残っているため）');
+        $this->assertEqualsWithDelta(5.26, $counts[0] / $draws * 100, 1.0, 'index 0 の出現率が約 5.26% ±1.0% の範囲内であること');
+    }
+
     public function test_update_to_zero_is_idempotent(): void
     {
         // Arrange — index 0 を 2 回 0 にしても totalWeight と挙動が安定していること

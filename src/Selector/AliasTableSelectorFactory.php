@@ -13,7 +13,7 @@ use WeightedSample\SelectorFactoryInterface;
  * Pick:  O(1) — single random call, pure integer arithmetic.
  * Recommended for WeightedPool with large item sets (≥ ~50) and frequent draws.
  */
-final class AliasTableSelectorFactory implements SelectorFactoryInterface
+final readonly class AliasTableSelectorFactory implements SelectorFactoryInterface
 {
     /**
      * @param list<int> $weights

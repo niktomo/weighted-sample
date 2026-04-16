@@ -29,7 +29,7 @@ class SelectorAndFilterIntegrationTest extends TestCase
             ['name' => 'Medium', 'weight' => 9],
             ['name' => 'Common', 'weight' => 90],
         ];
-        $extractor = static fn (array $item) => $item['weight'];
+        $extractor = static fn (array $item): int => $item['weight'];
         $draws     = 100_000;
 
         $factories = [
@@ -82,7 +82,7 @@ class SelectorAndFilterIntegrationTest extends TestCase
             ['id' => 'A', 'weight' => 50],
             ['id' => 'B', 'weight' => 50],
         ];
-        $extractor = static fn (array $item) => $item['weight'];
+        $extractor = static fn (array $item): int => $item['weight'];
 
         foreach ([new PrefixSumSelectorFactory(), new FenwickTreeSelectorFactory(), new AliasTableSelectorFactory()] as $factory) {
             $poolA = WeightedPool::of($items, $extractor, selectorFactory: $factory, randomizer: new SeededRandomizer(999));
@@ -111,7 +111,7 @@ class SelectorAndFilterIntegrationTest extends TestCase
         $filter = new CompositeFilter([new PositiveValueFilter(), new StrictValueFilter()]);
 
         // When: CompositeFilter を使った WeightedPool を構築する
-        $pool = WeightedPool::of($items, static fn (array $item) => $item['weight'], filter: $filter);
+        $pool = WeightedPool::of($items, static fn (array $item): int => $item['weight'], filter: $filter);
 
         // Then: 全 draw が valid アイテムだけを返すこと
         for ($i = 0; $i < 20; $i++) {
@@ -131,8 +131,8 @@ class SelectorAndFilterIntegrationTest extends TestCase
         $filter = new CompositeFilter([new PositiveValueFilter()]);
         $pool   = BoxPool::of(
             $items,
-            static fn (array $item) => $item['weight'],
-            static fn (array $item) => $item['stock'],
+            static fn (array $item): int => $item['weight'],
+            static fn (array $item): int => $item['stock'],
             filter: $filter,
             randomizer: new SeededRandomizer(7),
         );
@@ -163,7 +163,7 @@ class SelectorAndFilterIntegrationTest extends TestCase
             ['tier' => 'SR',  'weight' => 17],
             ['tier' => 'R',   'weight' => 80],
         ];
-        $extractor = static fn (array $item) => $item['weight'];
+        $extractor = static fn (array $item): int => $item['weight'];
         $seed      = 20240101;
 
         // When: 2回のセッション（プール再生成）で各5回 draw する

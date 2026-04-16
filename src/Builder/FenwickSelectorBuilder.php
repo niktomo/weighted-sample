@@ -24,7 +24,7 @@ use WeightedSample\TotalWeightQueryInterface;
  *
  * totalWeight() delegates to TotalWeightQueryInterface::totalWeight(), which is O(1).
  */
-final class FenwickSelectorBuilder implements SelectorBuilderInterface
+final readonly class FenwickSelectorBuilder implements SelectorBuilderInterface
 {
     public function __construct(
         private readonly SelectorInterface&ItemExclusionObserverInterface&TotalWeightQueryInterface $selector,

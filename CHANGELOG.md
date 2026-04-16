@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `AliasTableSelector::buildTable()` — added termination guarantee comment for Vose's algorithm loop.
 - `BoxPool::drawMany()` — added comment clarifying that `$drawn` counter overflow is unreachable in practice.
 
+### Changed
+- All closures in source, tests, and README examples updated to `static fn (Type $param): ReturnType =>` form — prevents unintended `$this` capture and makes intent explicit.
+
 ### Fixed
 - README / README-ja — `SeededRandomizer` seed derivation examples clarified: entity-bound reproducibility and one-off replay are now shown as separate use cases, with an explicit note to use `SecureRandomizer` when replay is not needed.
 
